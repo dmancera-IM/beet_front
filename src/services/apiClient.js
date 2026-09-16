@@ -9,8 +9,9 @@
 // call is resolved against the in-memory mock database in ./mockDb.js.
 //
 // See ./mockDb.js for the seed data (demo users, cooperativas, convenios,
-// afiliados, inventario, transacciones, etc.) and README.GES_FRONT.md at
-// the project root for demo credentials.
+// productos, afiliados, inventario, transacciones, etc.), and
+// FRONTEND_DB_ALIGNMENT.md at the project root for how this mock maps to
+// the real PostgreSQL model.
 
 import * as db from "./mockDb";
 
@@ -56,12 +57,12 @@ function sessionExpired(tokenAudience) {
 function currentAdmin({ required = true } = {}) {
   const token = adminTokenStore.get();
   const id = token && token.startsWith("admin:") ? Number(token.slice(6)) : null;
-  const admin = id != null ? db.admins.find((a) => a.id === id && a.estado) : null;
-  if (!admin && required) {
+  const usuario = id != null ? db.usuarios.find((u) => u.id === id && u.estado) : null;
+  if (!usuario && required) {
     if (token) sessionExpired("admin");
     throw new ApiError("No autenticado.", 401, "No autenticado.");
   }
-  return admin ?? null;
+  return usuario ?? null;
 }
 
 function currentAfiliado({ required = true } = {}) {
@@ -75,12 +76,15 @@ function currentAfiliado({ required = true } = {}) {
   return afiliado ?? null;
 }
 
-function resolveScope(admin) {
-  if (admin.rol === "SUPER_ADMIN") {
+// SUPER_ADMIN y GES no pertenecen a ninguna cooperativa (id_cooperativa:
+// null) — un SUPER_ADMIN navega entre cooperativas con el selector
+// persistente (cooperativaScopeStore); ADMIN/LECTOR solo ven la suya.
+function resolveScope(usuario) {
+  if (usuario.rol === "SUPER_ADMIN") {
     const stored = cooperativaScopeStore.get();
     return stored ? Number(stored) : null;
   }
-  return admin.cooperativa_id;
+  return usuario.id_cooperativa;
 }
 
 function paginate(items, params) {
@@ -90,40 +94,52 @@ function paginate(items, params) {
   return { items: items.slice(start, start + pageSize), total: items.length, page, page_size: pageSize };
 }
 
-function adminOut(a) {
-  return { id: a.id, nombre: a.nombre, correo: a.correo, rol: a.rol, cooperativa_id: a.cooperativa_id };
+function usuarioOut(u) {
+  return { id: u.id, nombre: u.nombre, correo: u.correo, rol: u.rol, cooperativa_id: u.id_cooperativa, estado: u.estado };
 }
 
-function afiliadoConCooperativa(a) {
-  return { ...db.afiliadoConCupo(a), cooperativa_nombre: db.cooperativaNombre(a.cooperativa_id) };
+function usuarioConCooperativaOut(u) {
+  return { ...usuarioOut(u), cooperativa_nombre: db.cooperativaNombre(u.id_cooperativa) };
 }
 
-function usuarioAdminOut(a) {
-  return { ...a, cooperativa_nombre: db.cooperativaNombre(a.cooperativa_id) };
+function afiliadoOut(a) {
+  return { ...db.afiliadoConCupo(a), cooperativa_id: a.id_cooperativa };
+}
+
+function afiliadoConCooperativaOut(a) {
+  return { ...afiliadoOut(a), cooperativa_nombre: db.cooperativaNombre(a.id_cooperativa) };
+}
+
+// cooperativas_convenios (lo que el resto del frontend sigue llamando
+// "convenio" — ver FRONTEND_DB_ALIGNMENT.md) tal como lo consume la UI del
+// administrador: precio_normal/precio_beet, vigencia y estado ya viven en
+// esta fila; el nombre/convenio maestro se copia como snapshot.
+function cooperativaConvenioOut(cc) {
+  return cc;
 }
 
 // ---------------------------------------------------------------------------
 // Plantillas — mutual-exclusivity helper shared by convenio patch + plantilla patch
 // ---------------------------------------------------------------------------
 
-function setPlantillaActiva(convenioId, activa /* {tipo,id,nombre} | null */) {
+function setPlantillaActiva(cooperativaConvenioId, activa /* {tipo,id,nombre} | null */) {
   db.plantillasPersonalizadas.forEach((p) => {
-    if (p.convenio_id === convenioId) p.en_uso = activa?.tipo === "personalizada" && p.id === activa.id;
+    if (p.cooperativa_convenio_id === cooperativaConvenioId) p.en_uso = activa?.tipo === "personalizada" && p.id === activa.id;
   });
-  const conv = db.convenios.find((c) => c.id === convenioId);
-  if (conv) conv.plantilla_en_uso = activa ? activa.nombre : null;
+  const cc = db.cooperativasConvenios.find((c) => c.id === cooperativaConvenioId);
+  if (cc) cc.plantilla_en_uso = activa ? activa.nombre : null;
 }
 
-function plantillasDisponiblesDe(convenioId) {
-  const conv = db.convenios.find((c) => c.id === convenioId);
+function plantillasDisponiblesDe(cooperativaConvenioId) {
+  const cc = db.cooperativasConvenios.find((c) => c.id === cooperativaConvenioId);
   const catalogo = db.catalogoPlantillas.map((c) => ({
     tipo: "catalogo",
     clave: c.clave,
     nombre: c.nombre,
-    en_uso: conv?.plantilla_en_uso === c.nombre,
+    en_uso: cc?.plantilla_en_uso === c.nombre,
   }));
   const personalizadas = db.plantillasPersonalizadas
-    .filter((p) => p.convenio_id === convenioId)
+    .filter((p) => p.cooperativa_convenio_id === cooperativaConvenioId)
     .map((p) => ({ tipo: "personalizada", id: p.id, nombre: p.nombre, version: p.version, en_uso: p.en_uso }));
   return [...catalogo, ...personalizadas];
 }
@@ -157,15 +173,27 @@ function fakeXlsxBlob() {
 }
 
 // ---------------------------------------------------------------------------
-// Compra (transacciones.comprar) — replica la simulación de pasarela que la
-// propia pantalla PurchaseFlow ya documenta en su hint de desarrollo.
+// Compra del afiliado (pago tarjeta/cupo) — replica la simulación de
+// pasarela que la propia pantalla PurchaseFlow ya documenta en su hint de
+// desarrollo. Esto identifica un PRODUCTO (no un convenio completo: un
+// convenio puede tener varios productos, sección 7) y hereda el precio de
+// la fila cooperativas_convenios que habilitó ese convenio para la
+// cooperativa del afiliado.
+//
+// Un pago rechazado por la pasarela (tarjeta terminada en 0001/0002) NO
+// crea una fila de compra — nunca existió un estado "RECHAZADA" en el
+// modelo (ver sección 11); el afiliado solo recibe el error y puede
+// reintentar sin dejar un registro fantasma.
 // ---------------------------------------------------------------------------
 
-function ejecutarCompra(afiliado, { convenio_id, cantidad, metodo_pago, numero_cuotas, firma_base64, numero_tarjeta }) {
-  const convenio = db.convenios.find((c) => c.id === Number(convenio_id) && c.cooperativa_id === afiliado.cooperativa_id && c.estado);
-  if (!convenio) throw new ApiError("Este beneficio ya no está disponible.", 404, "Convenio no encontrado.");
+function ejecutarCompra(afiliado, { producto_id, cantidad, metodo_pago, numero_cuotas, firma_base64, numero_tarjeta }) {
+  const producto = db.productoDe(producto_id);
+  const cooperativaConvenio = db.cooperativaConvenioDeProducto(producto, afiliado.id_cooperativa);
+  if (!producto || !producto.estado || !cooperativaConvenio || !cooperativaConvenio.estado) {
+    throw new ApiError("Este beneficio ya no está disponible.", 404, "Producto no encontrado.");
+  }
 
-  const subtotal = convenio.precio_beet * cantidad;
+  const subtotal = cooperativaConvenio.precio_beet * cantidad;
   const total = subtotal;
 
   if (metodo_pago === "CUPO") {
@@ -175,59 +203,46 @@ function ejecutarCompra(afiliado, { convenio_id, cantidad, metodo_pago, numero_c
     if (!firma_base64) throw new ApiError("La firma es obligatoria para pagar con cupo.", 422, "Falta la firma.");
   }
 
-  let estado = "COMPLETADA";
-  let resultado_pago = "aprobado";
-  let motivo_rechazo = null;
   let referencia_pago = null;
 
   if (metodo_pago === "TARJETA") {
     const last4 = String(numero_tarjeta || "").slice(-4);
     if (last4 === "0001") {
-      estado = "RECHAZADA";
-      resultado_pago = "rechazado_fondos";
-      motivo_rechazo = "Fondos insuficientes.";
+      throw new ApiError("Fondos insuficientes.", 402, "rechazado_fondos");
     } else if (last4 === "0002") {
-      estado = "RECHAZADA";
-      resultado_pago = "rechazado_invalida";
-      motivo_rechazo = "Tarjeta inválida o vencida.";
+      throw new ApiError("Tarjeta inválida o vencida.", 402, "rechazado_invalida");
     } else if (last4 === "0003") {
-      throw new ApiError("La pasarela de pago no respondió a tiempo. Intenta nuevamente.", 502, "Timeout de la pasarela.");
-    } else {
-      referencia_pago = `AUTH-${Math.floor(10000 + Math.random() * 89999)}`;
+      throw new ApiError("La pasarela de pago no respondió a tiempo. Intenta nuevamente.", 502, "error_pasarela");
     }
+    referencia_pago = `AUTH-${Math.floor(10000 + Math.random() * 89999)}`;
   }
 
-  if (estado === "RECHAZADA") {
-    const trx = {
-      id: db.newId("transaccion"), afiliado_id: afiliado.id, convenio_id: convenio.id, cantidad, subtotal, total,
-      metodo_pago, numero_cuotas: numero_cuotas ?? null, estado, codigos: [], created_at: db.todayISO(),
-      referencia_pago, motivo_rechazo, resultado_pago,
-    };
-    db.transacciones.push(trx);
-    return trx;
-  }
-
-  // Assign `cantidad` units: prefer already-"disponible" seeded codes (more
+  // Assign `cantidad` units: prefer already-DISPONIBLE seeded codes (more
   // realistic), synthesizing extra ones only if the demo pool runs out.
   const codigos = [];
-  const disponibles = db.unidadesInventario.filter((u) => u.convenio_id === convenio.id && u.estado === "disponible");
+  const disponibles = db.unidadesInventario.filter(
+    (u) => u.id_producto === producto.id && u.id_cooperativa === afiliado.id_cooperativa && u.estado === "DISPONIBLE"
+  );
   for (let i = 0; i < cantidad; i++) {
     const unidad = disponibles[i];
     if (unidad) {
-      unidad.estado = "entregada";
+      unidad.estado = "ENTREGADA";
       codigos.push(unidad.codigo);
     } else {
-      const codigo = `${convenio.nombre.slice(0, 3).toUpperCase()}-${db.newId("unidad")}`;
-      db.unidadesInventario.push({ id: db.newId("unidad"), convenio_id: convenio.id, codigo, estado: "entregada", fecha_ingreso: db.dateOnly() });
+      const codigo = `${producto.nombre.slice(0, 3).toUpperCase()}-${db.newId("unidad")}`;
+      db.unidadesInventario.push({
+        id: db.newId("unidad"), id_producto: producto.id, id_cooperativa: afiliado.id_cooperativa,
+        codigo, estado: "ENTREGADA", fecha_asignacion: db.dateOnly(),
+      });
       codigos.push(codigo);
     }
-    db.tickets.push({ id: db.newId("ticket"), afiliado_id: afiliado.id, convenio_id: convenio.id, codigo: codigos[i], estado: "entregada" });
+    db.tickets.push({ id: db.newId("ticket"), afiliado_id: afiliado.id, id_producto: producto.id, codigo: codigos[i], estado: "ENTREGADA" });
   }
 
   const trx = {
-    id: db.newId("transaccion"), afiliado_id: afiliado.id, convenio_id: convenio.id, cantidad, subtotal, total,
-    metodo_pago, numero_cuotas: numero_cuotas ?? null, estado, codigos, created_at: db.todayISO(),
-    referencia_pago, motivo_rechazo, resultado_pago,
+    id: db.newId("transaccion"), afiliado_id: afiliado.id, id_producto: producto.id, cantidad, subtotal, total,
+    metodo_pago, numero_cuotas: numero_cuotas ?? null, estado: "COMPLETADA", codigos, created_at: db.todayISO(),
+    referencia_pago, resultado_pago: "aprobado",
   };
   db.transacciones.push(trx);
 
@@ -235,14 +250,14 @@ function ejecutarCompra(afiliado, { convenio_id, cantidad, metodo_pago, numero_c
     const cupo = db.cupoDe(afiliado.id);
     cupo.cupo_disponible -= total;
     db.documentos.push({
-      id: db.newId("documento"), afiliado_id: afiliado.id, convenio_id: convenio.id, transaccion_id: trx.id,
-      convenio_nombre: convenio.nombre, valor: total, numero_cuotas, fecha_generacion: db.todayISO(),
-      fecha_firma: db.todayISO(), estado: "FIRMADO",
+      id: db.newId("documento"), afiliado_id: afiliado.id, id_producto: producto.id, transaccion_id: trx.id,
+      producto_nombre: producto.nombre, convenio_nombre: cooperativaConvenio.nombre, valor: total, numero_cuotas,
+      fecha_generacion: db.todayISO(), fecha_firma: db.todayISO(), estado: "FIRMADO",
     });
   }
 
   db.logsAuditoria.unshift({
-    id: db.newId("log"), cooperativa_id: afiliado.cooperativa_id, accion: "compra_completada",
+    id: db.newId("log"), cooperativa_id: afiliado.id_cooperativa, accion: "compra_completada",
     tabla_afectada: "transacciones", registro_id: trx.id, created_at: db.todayISO(),
   });
 
@@ -262,12 +277,12 @@ async function handle(method, fullPath, body) {
 
   // ---- AUTH -----------------------------------------------------------
   if (is("api", "auth", "admin", "login") && method === "POST") {
-    const admin = db.admins.find((a) => a.correo.toLowerCase() === String(body.correo || "").trim().toLowerCase());
-    if (!admin) throw new ApiError("Credenciales incorrectas.", 401, "Credenciales incorrectas.");
-    if (!admin.estado) throw new ApiError("Tu usuario está desactivado.", 403, "Usuario desactivado.");
-    return { access_token: `admin:${admin.id}`, usuario: adminOut(admin) };
+    const usuario = db.usuarios.find((u) => u.correo.toLowerCase() === String(body.correo || "").trim().toLowerCase());
+    if (!usuario) throw new ApiError("Credenciales incorrectas.", 401, "Credenciales incorrectas.");
+    if (!usuario.estado) throw new ApiError("Tu usuario está desactivado.", 403, "Usuario desactivado.");
+    return { access_token: `admin:${usuario.id}`, usuario: usuarioOut(usuario) };
   }
-  if (is("api", "auth", "admin", "me") && method === "GET") return adminOut(currentAdmin());
+  if (is("api", "auth", "admin", "me") && method === "GET") return usuarioOut(currentAdmin());
   if (is("api", "auth", "admin", "forgot-password") && method === "POST") return { detail: "Si el correo existe, se enviaron instrucciones." };
   if (is("api", "auth", "admin", "reset-password") && method === "POST") return { detail: "Contraseña actualizada." };
 
@@ -275,9 +290,9 @@ async function handle(method, fullPath, body) {
     const afiliado = db.afiliados.find((a) => a.correo.toLowerCase() === String(body.correo || "").trim().toLowerCase());
     if (!afiliado) throw new ApiError("Credenciales incorrectas.", 401, "Credenciales incorrectas.");
     if (!afiliado.estado) throw new ApiError("Tu cuenta está inactiva. Contacta a tu cooperativa.", 403, "Afiliado inactivo.");
-    return { access_token: `afiliado:${afiliado.id}`, afiliado: afiliadoConCooperativa(afiliado) };
+    return { access_token: `afiliado:${afiliado.id}`, afiliado: afiliadoConCooperativaOut(afiliado) };
   }
-  if (is("api", "auth", "afiliado", "me") && method === "GET") return afiliadoConCooperativa(currentAfiliado());
+  if (is("api", "auth", "afiliado", "me") && method === "GET") return afiliadoConCooperativaOut(currentAfiliado());
   if (is("api", "auth", "afiliado", "registro") && method === "POST") {
     const { documento, correo, password, confirmar_password } = body;
     if (password !== confirmar_password) throw new ApiError("Las contraseñas no coinciden.", 422, "Las contraseñas no coinciden.");
@@ -292,39 +307,43 @@ async function handle(method, fullPath, body) {
   // ---- ADMIN: usuarios / cooperativas / logs ---------------------------
   if (is("api", "admin", "usuarios") && method === "GET") {
     currentAdmin();
-    let rows = db.admins;
+    let rows = db.usuarios;
     const coopId = q.get("cooperativa_id");
-    if (coopId) rows = rows.filter((a) => a.cooperativa_id === Number(coopId));
+    if (coopId) rows = rows.filter((u) => u.id_cooperativa === Number(coopId));
     const estado = q.get("estado");
-    if (estado !== null && estado !== "") rows = rows.filter((a) => String(a.estado) === estado);
+    if (estado !== null && estado !== "") rows = rows.filter((u) => String(u.estado) === estado);
     const term = (q.get("q") || "").trim().toLowerCase();
     if (term) {
       rows = rows.filter(
-        (a) => a.nombre.toLowerCase().includes(term) || a.correo.toLowerCase().includes(term) || (db.cooperativaNombre(a.cooperativa_id) || "").toLowerCase().includes(term)
+        (u) => u.nombre.toLowerCase().includes(term) || u.correo.toLowerCase().includes(term) || (db.cooperativaNombre(u.id_cooperativa) || "").toLowerCase().includes(term)
       );
     }
-    return rows.map(usuarioAdminOut);
+    return rows.map(usuarioConCooperativaOut);
   }
   if (is("api", "admin", "usuarios") && method === "POST") {
     currentAdmin();
-    if (db.admins.some((a) => a.correo.toLowerCase() === String(body.correo).toLowerCase())) {
+    if (db.usuarios.some((u) => u.correo.toLowerCase() === String(body.correo).toLowerCase())) {
       throw new ApiError("Ya existe un usuario con ese correo.", 409, "Correo duplicado.");
     }
-    const usuario = { id: db.newId("admin"), nombre: body.nombre, correo: body.correo, rol: body.rol, cooperativa_id: body.cooperativa_id ?? null, estado: true };
-    db.admins.push(usuario);
-    return usuarioAdminOut(usuario);
+    const usuario = {
+      id: db.newId("usuario"), nombre: body.nombre, correo: body.correo, rol: body.rol,
+      id_cooperativa: body.cooperativa_id ?? null, estado: true, fecha_creacion: db.dateOnly(),
+    };
+    db.usuarios.push(usuario);
+    return usuarioConCooperativaOut(usuario);
   }
   if (is("api", "admin", "usuarios", "*") && method === "PATCH") {
     currentAdmin();
-    const usuario = db.admins.find((a) => a.id === idAt(3));
+    const usuario = db.usuarios.find((u) => u.id === idAt(3));
     if (!usuario) throw new ApiError("Usuario no encontrado.", 404, "No encontrado.");
-    Object.assign(usuario, body);
-    return usuarioAdminOut(usuario);
+    const { cooperativa_id, ...rest } = body;
+    Object.assign(usuario, rest, cooperativa_id !== undefined ? { id_cooperativa: cooperativa_id } : {});
+    return usuarioConCooperativaOut(usuario);
   }
   if (is("api", "admin", "usuarios", "*") && method === "DELETE") {
     currentAdmin();
-    const idx = db.admins.findIndex((a) => a.id === idAt(3));
-    if (idx >= 0) db.admins.splice(idx, 1);
+    const idx = db.usuarios.findIndex((u) => u.id === idAt(3));
+    if (idx >= 0) db.usuarios.splice(idx, 1);
     return null;
   }
   if (is("api", "admin", "cooperativas") && method === "GET") {
@@ -334,7 +353,7 @@ async function handle(method, fullPath, body) {
   if (is("api", "admin", "cooperativas") && method === "POST") {
     currentAdmin();
     if (db.cooperativas.some((c) => c.nit === body.nit)) throw new ApiError("Ya existe una cooperativa con ese NIT.", 409, "NIT duplicado.");
-    const coop = { id: db.newId("cooperativa"), nombre: body.nombre, nit: body.nit, estado: true };
+    const coop = { id: db.newId("cooperativa"), nombre: body.nombre, nit: body.nit, estado: true, fecha_creacion: db.dateOnly() };
     db.cooperativas.push(coop);
     return coop;
   }
@@ -366,19 +385,19 @@ async function handle(method, fullPath, body) {
   if (is("api", "afiliados") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    let rows = db.afiliados.filter((a) => a.cooperativa_id === scope);
+    let rows = db.afiliados.filter((a) => a.id_cooperativa === scope);
     const estado = q.get("estado");
     if (estado) rows = rows.filter((a) => String(a.estado) === estado);
     const term = (q.get("q") || "").trim().toLowerCase();
     if (term) rows = rows.filter((a) => `${a.nombres} ${a.apellidos} ${a.documento} ${a.correo}`.toLowerCase().includes(term));
     const page = paginate(rows, q);
-    return { ...page, items: page.items.map(db.afiliadoConCupo) };
+    return { ...page, items: page.items.map(afiliadoOut) };
   }
-  if (is("api", "afiliados", "me") && method === "GET") return afiliadoConCooperativa(currentAfiliado());
+  if (is("api", "afiliados", "me") && method === "GET") return afiliadoConCooperativaOut(currentAfiliado());
   if (is("api", "afiliados", "me") && method === "PATCH") {
     const afiliado = currentAfiliado();
     Object.assign(afiliado, { correo: body.correo ?? afiliado.correo, telefono: body.telefono ?? afiliado.telefono });
-    return afiliadoConCooperativa(afiliado);
+    return afiliadoConCooperativaOut(afiliado);
   }
   if (is("api", "afiliados", "carga-masiva") && method === "POST") {
     currentAdmin();
@@ -389,30 +408,51 @@ async function handle(method, fullPath, body) {
     currentAdmin();
     const afiliado = db.afiliados.find((a) => a.id === idAt(2));
     if (!afiliado) throw new ApiError("Afiliado no encontrado.", 404, "No encontrado.");
-    return db.afiliadoConCupo(afiliado);
+    return afiliadoOut(afiliado);
   }
   if (is("api", "afiliados") && method === "POST") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    if (db.afiliados.some((a) => a.cooperativa_id === scope && a.documento === body.documento)) {
+    if (db.afiliados.some((a) => a.id_cooperativa === scope && a.documento === body.documento)) {
       throw new ApiError("Ya existe un afiliado con ese documento en esta cooperativa.", 409, "Documento duplicado.");
     }
-    const afiliado = { id: db.newId("afiliado"), estado: true, cooperativa_id: scope, ...body };
+    const afiliado = { id: db.newId("afiliado"), estado: true, ...body, id_cooperativa: scope };
     db.afiliados.push(afiliado);
-    return db.afiliadoConCupo(afiliado);
+    return afiliadoOut(afiliado);
   }
   if (is("api", "afiliados", "*") && method === "PATCH") {
     currentAdmin();
     const afiliado = db.afiliados.find((a) => a.id === idAt(2));
     if (!afiliado) throw new ApiError("Afiliado no encontrado.", 404, "No encontrado.");
     Object.assign(afiliado, body);
-    return db.afiliadoConCupo(afiliado);
+    return afiliadoOut(afiliado);
   }
 
-  // ---- CONVENIOS ----------------------------------------------------------
+  // ---- CONVENIOS (cooperativas_convenios) --------------------------------
+  // Lo que el resto del frontend sigue llamando "convenio" es, en el nuevo
+  // modelo, la fila cooperativas_convenios: qué convenio del catálogo
+  // maestro de GES (ver pages/admin/ges/gesData.js) activó esta cooperativa,
+  // con qué precio BEET/normal y vigencia (sección 10).
+  if (is("api", "convenios", "catalogo-maestro") && method === "GET") {
+    currentAdmin();
+    return db.conveniosCatalogo;
+  }
   if (is("api", "convenios", "catalogo") && method === "GET") {
+    // Catálogo del afiliado: un ítem POR PRODUCTO (un convenio puede tener
+    // varios productos, sección 7) de cada cooperativas_convenios activo de
+    // su cooperativa — nunca expone cooperativa_id.
     const afiliado = currentAfiliado();
-    return db.convenios.filter((c) => c.cooperativa_id === afiliado.cooperativa_id && c.estado).map(db.convenioPublico);
+    const activos = db.cooperativasConvenios.filter((cc) => cc.id_cooperativa === afiliado.id_cooperativa && cc.estado);
+    return activos.flatMap((cc) =>
+      db.productosDeCooperativaConvenio(cc).map((producto) => db.productoPublico(producto, cc))
+    );
+  }
+  if (is("api", "convenios", "productos") && method === "GET") {
+    // Productos del catálogo maestro para UN convenio (id_convenio) — usado
+    // por el selector "Convenio → Producto" (secciones 9 y 14).
+    currentAdmin({ required: false }) || currentAfiliado({ required: false });
+    const idConvenio = q.get("id_convenio");
+    return db.productosConvenio.filter((p) => p.id_convenio === idConvenio);
   }
   if (is("api", "convenios", "exportar") && method === "GET") {
     currentAdmin();
@@ -421,17 +461,25 @@ async function handle(method, fullPath, body) {
   if (is("api", "convenios") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    let rows = db.convenios.filter((c) => c.cooperativa_id === scope);
+    let rows = db.cooperativasConvenios.filter((c) => c.id_cooperativa === scope);
     const estado = q.get("estado");
     if (estado) rows = rows.filter((c) => String(c.estado) === estado);
-    return paginate(rows, q);
+    return paginate(rows.map(cooperativaConvenioOut), q);
   }
   if (is("api", "convenios") && method === "POST") {
+    // Crea (activa) un convenio del catálogo maestro de GES para esta
+    // cooperativa — nunca un convenio "inventado" fuera del catálogo (ver
+    // sección 9/11 de FRONTEND_DB_ALIGNMENT.md).
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    const convenio = { id: db.newId("convenio"), cooperativa_id: scope, plantilla_en_uso: null, imagen_marca_url: null, ...body };
-    db.convenios.push(convenio);
-    return convenio;
+    const idConvenio = body.id_convenio ?? db.conveniosCatalogo.find((c) => c.nombre === body.nombre)?.id ?? null;
+    const cc = {
+      id: db.newId("cooperativaConvenio"), id_cooperativa: scope, id_convenio: idConvenio,
+      plantilla_en_uso: null, imagen_marca_url: null, descripcion: null,
+      ...body, precio_normal: body.precio_normal ?? 0, precio_beet: body.precio_beet ?? 0,
+    };
+    db.cooperativasConvenios.push(cc);
+    return cooperativaConvenioOut(cc);
   }
   if (is("api", "convenios", "carga-masiva") && method === "POST") {
     currentAdmin();
@@ -440,25 +488,25 @@ async function handle(method, fullPath, body) {
   }
   if (is("api", "convenios", "*") && method === "GET") {
     currentAdmin();
-    const convenio = db.convenios.find((c) => c.id === idAt(2));
-    if (!convenio) throw new ApiError("Convenio no encontrado.", 404, "No encontrado.");
-    return convenio;
+    const cc = db.cooperativasConvenios.find((c) => c.id === idAt(2));
+    if (!cc) throw new ApiError("Convenio no encontrado.", 404, "No encontrado.");
+    return cooperativaConvenioOut(cc);
   }
   if (is("api", "convenios", "*") && method === "PATCH") {
     currentAdmin();
-    const convenio = db.convenios.find((c) => c.id === idAt(2));
-    if (!convenio) throw new ApiError("Convenio no encontrado.", 404, "No encontrado.");
+    const cc = db.cooperativasConvenios.find((c) => c.id === idAt(2));
+    if (!cc) throw new ApiError("Convenio no encontrado.", 404, "No encontrado.");
     if (Object.prototype.hasOwnProperty.call(body, "plantilla_catalogo_clave")) {
       const clave = body.plantilla_catalogo_clave;
       const catalogo = clave ? db.catalogoPlantillas.find((c) => c.clave === clave) : null;
-      setPlantillaActiva(convenio.id, catalogo ? { tipo: "catalogo", nombre: catalogo.nombre } : null);
+      setPlantillaActiva(cc.id, catalogo ? { tipo: "catalogo", nombre: catalogo.nombre } : null);
       const { plantilla_catalogo_clave, ...rest } = body;
       void plantilla_catalogo_clave;
-      Object.assign(convenio, rest);
+      Object.assign(cc, rest);
     } else {
-      Object.assign(convenio, body);
+      Object.assign(cc, body);
     }
-    return convenio;
+    return cooperativaConvenioOut(cc);
   }
 
   // ---- CUPOS ----------------------------------------------------------
@@ -504,15 +552,16 @@ async function handle(method, fullPath, body) {
   if (is("api", "dashboard", "stats") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    const conveniosScope = db.convenios.filter((c) => c.cooperativa_id === scope);
-    const afiliadosScope = db.afiliados.filter((a) => a.cooperativa_id === scope).map((a) => a.id);
+    const conveniosScope = db.cooperativasConvenios.filter((c) => c.id_cooperativa === scope);
+    const afiliadosScope = db.afiliados.filter((a) => a.id_cooperativa === scope).map((a) => a.id);
     const trxScope = db.transacciones.filter((t) => afiliadosScope.includes(t.afiliado_id) && t.estado === "COMPLETADA");
     const ventasTarjeta = trxScope.filter((t) => t.metodo_pago === "TARJETA").reduce((s, t) => s + t.total, 0);
     const ventasCupo = trxScope.filter((t) => t.metodo_pago === "CUPO").reduce((s, t) => s + t.total, 0);
     const ventasTotal = ventasTarjeta + ventasCupo;
     const ahorro = trxScope.reduce((s, t) => {
-      const c = db.convenios.find((x) => x.id === t.convenio_id);
-      return s + (c ? (c.precio_publico - c.precio_beet) * t.cantidad : 0);
+      const producto = db.productoDe(t.id_producto);
+      const cc = db.cooperativaConvenioDeProducto(producto, scope);
+      return s + (cc ? (cc.precio_normal - cc.precio_beet) * t.cantidad : 0);
     }, 0);
     const en30dias = new Date();
     en30dias.setDate(en30dias.getDate() + 30);
@@ -545,7 +594,7 @@ async function handle(method, fullPath, body) {
     const scope = resolveScope(admin);
     const documento = (q.get("documento") || "").trim();
     const nombresBuscados = (q.get("nombres") || "").trim().toLowerCase();
-    const afiliado = db.afiliados.find((a) => a.cooperativa_id === scope && a.documento === documento);
+    const afiliado = db.afiliados.find((a) => a.id_cooperativa === scope && a.documento === documento);
     if (!afiliado) return { afiliado: null, documentos: [] };
     const nombreCompleto = `${afiliado.nombres} ${afiliado.apellidos}`.toLowerCase();
     const nombre_coincide = !nombresBuscados || nombreCompleto.includes(nombresBuscados);
@@ -555,7 +604,7 @@ async function handle(method, fullPath, body) {
   if (is("api", "documentos") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    const afiliadosScope = db.afiliados.filter((a) => a.cooperativa_id === scope).map((a) => a.id);
+    const afiliadosScope = db.afiliados.filter((a) => a.id_cooperativa === scope).map((a) => a.id);
     return paginate(db.documentos.filter((d) => afiliadosScope.includes(d.afiliado_id)), q);
   }
   if (is("api", "documentos", "*", "descarga") && method === "GET") {
@@ -564,9 +613,12 @@ async function handle(method, fullPath, body) {
   }
 
   // ---- INVENTARIO ---------------------------------------------------------
+  // Las unidades de inventario ahora se identifican por PRODUCTO
+  // (`producto_id`, sección 12) — cada convenio puede tener varios
+  // productos y cada uno tiene su propia bolsa de códigos.
   if (is("api", "inventario", "resumen") && method === "GET") {
     currentAdmin();
-    return db.resumenInventarioDe(q.get("convenio_id"));
+    return db.resumenInventarioDe(q.get("producto_id"));
   }
   if (is("api", "inventario", "carga-masiva") && method === "POST") {
     currentAdmin();
@@ -574,30 +626,31 @@ async function handle(method, fullPath, body) {
     return { detail: `Se procesó "${file?.name ?? "el archivo"}" correctamente.`, invalidos: 0, omitidos: 0, errores: [] };
   }
   if (is("api", "inventario", "carga") && method === "POST") {
-    currentAdmin();
-    const convenioId = Number(q.get("convenio_id"));
-    const convenio = db.convenios.find((c) => c.id === convenioId);
+    const admin = currentAdmin();
+    const scope = resolveScope(admin);
+    const productoId = Number(q.get("producto_id"));
+    const producto = db.productoDe(productoId);
     const file = body.get("file");
     const cantidad = 5;
     for (let i = 0; i < cantidad; i++) {
-      const codigo = `${(convenio?.nombre ?? "NEW").slice(0, 3).toUpperCase()}-${db.newId("unidad")}`;
-      db.unidadesInventario.push({ id: db.newId("unidad"), convenio_id: convenioId, codigo, estado: "disponible", fecha_ingreso: db.dateOnly() });
+      const codigo = `${(producto?.nombre ?? "NEW").slice(0, 3).toUpperCase()}-${db.newId("unidad")}`;
+      db.unidadesInventario.push({ id: db.newId("unidad"), id_producto: productoId, id_cooperativa: scope, codigo, estado: "DISPONIBLE", fecha_asignacion: db.dateOnly() });
     }
     return { detail: `Se cargaron ${cantidad} códigos nuevos desde "${file?.name ?? "el archivo"}".`, invalidos: 0, omitidos: 0, errores: [] };
   }
   if (is("api", "inventario", "bloquear") && method === "POST") {
     currentAdmin();
-    db.unidadesInventario.forEach((u) => { if (body.unidad_ids.includes(u.id)) u.estado = "bloqueada"; });
+    db.unidadesInventario.forEach((u) => { if (body.unidad_ids.includes(u.id)) u.estado = "BLOQUEADA"; });
     return { detail: `${body.unidad_ids.length} unidad(es) bloqueada(s).` };
   }
   if (is("api", "inventario", "desbloquear") && method === "POST") {
     currentAdmin();
-    db.unidadesInventario.forEach((u) => { if (body.unidad_ids.includes(u.id)) u.estado = "disponible"; });
+    db.unidadesInventario.forEach((u) => { if (body.unidad_ids.includes(u.id)) u.estado = "DISPONIBLE"; });
     return { detail: `${body.unidad_ids.length} unidad(es) desbloqueada(s).` };
   }
   if (is("api", "inventario") && method === "GET") {
     currentAdmin();
-    let rows = db.unidadesInventario.filter((u) => u.convenio_id === Number(q.get("convenio_id")));
+    let rows = db.unidadesInventario.filter((u) => u.id_producto === Number(q.get("producto_id")));
     const estado = q.get("estado");
     if (estado) rows = rows.filter((u) => u.estado === estado);
     return paginate(rows, q);
@@ -624,18 +677,18 @@ async function handle(method, fullPath, body) {
   }
   if (is("api", "plantillas") && method === "POST") {
     currentAdmin();
-    const convenioId = Number(body.get("convenio_id"));
+    const cooperativaConvenioId = Number(body.get("convenio_id"));
     const html = body.get("html");
     if (!html || !String(html).trim()) throw new ApiError("El código HTML es obligatorio.", 422, "HTML vacío.");
-    const convenio = db.convenios.find((c) => c.id === convenioId);
-    const version = db.plantillasPersonalizadas.filter((p) => p.convenio_id === convenioId).length + 1;
+    const cc = db.cooperativasConvenios.find((c) => c.id === cooperativaConvenioId);
+    const version = db.plantillasPersonalizadas.filter((p) => p.cooperativa_convenio_id === cooperativaConvenioId).length + 1;
     const plantilla = {
-      id: db.newId("plantilla"), convenio_id: convenioId,
-      nombre: body.get("nombre") || convenio?.nombre || "Plantilla personalizada",
+      id: db.newId("plantilla"), cooperativa_convenio_id: cooperativaConvenioId,
+      nombre: body.get("nombre") || cc?.nombre || "Plantilla personalizada",
       version, en_uso: true, html: String(html),
     };
     db.plantillasPersonalizadas.push(plantilla);
-    setPlantillaActiva(convenioId, { tipo: "personalizada", id: plantilla.id, nombre: plantilla.nombre });
+    setPlantillaActiva(cooperativaConvenioId, { tipo: "personalizada", id: plantilla.id, nombre: plantilla.nombre });
     return plantilla;
   }
   if (is("api", "plantillas", "*", "preview") && method === "GET") {
@@ -647,14 +700,14 @@ async function handle(method, fullPath, body) {
     currentAdmin();
     const plantilla = db.plantillasPersonalizadas.find((p) => p.id === idAt(2));
     if (!plantilla) throw new ApiError("Plantilla no encontrada.", 404, "No encontrada.");
-    if (body.estado) setPlantillaActiva(plantilla.convenio_id, { tipo: "personalizada", id: plantilla.id, nombre: plantilla.nombre });
-    else setPlantillaActiva(plantilla.convenio_id, null);
+    if (body.estado) setPlantillaActiva(plantilla.cooperativa_convenio_id, { tipo: "personalizada", id: plantilla.id, nombre: plantilla.nombre });
+    else setPlantillaActiva(plantilla.cooperativa_convenio_id, null);
     return plantilla;
   }
   if (is("api", "plantillas", "*") && method === "DELETE") {
     currentAdmin();
     const plantilla = db.plantillasPersonalizadas.find((p) => p.id === idAt(2));
-    if (plantilla?.en_uso) setPlantillaActiva(plantilla.convenio_id, null);
+    if (plantilla?.en_uso) setPlantillaActiva(plantilla.cooperativa_convenio_id, null);
     const idx = db.plantillasPersonalizadas.findIndex((p) => p.id === idAt(2));
     if (idx >= 0) db.plantillasPersonalizadas.splice(idx, 1);
     return null;
@@ -672,20 +725,23 @@ async function handle(method, fullPath, body) {
   if (is("api", "reportes", "rendimiento-convenios") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    return db.convenios
-      .filter((c) => c.cooperativa_id === scope)
-      .map((c) => {
-        const resumen = db.resumenInventarioDe(c.id);
-        const trx = db.transacciones.filter((t) => t.convenio_id === c.id && t.estado === "COMPLETADA");
-        const unidadesVendidas = trx.reduce((s, t) => s + t.cantidad, 0);
-        const ingresos = trx.reduce((s, t) => s + t.total, 0);
-        const entregadasOVendidas = resumen.entregada + resumen.redimida || 1;
-        return {
-          convenio_id: c.id, convenio_nombre: c.nombre, unidades_vendidas: unidadesVendidas, ingresos,
-          disponible: resumen.disponible, entregada: resumen.entregada,
-          tasa_redencion: Math.round((resumen.redimida / entregadasOVendidas) * 100),
-        };
-      });
+    return db.cooperativasConvenios
+      .filter((c) => c.id_cooperativa === scope)
+      .flatMap((cc) =>
+        db.productosDeCooperativaConvenio(cc).map((producto) => {
+          const resumen = db.resumenInventarioDe(producto.id);
+          const trx = db.transacciones.filter((t) => t.id_producto === producto.id && t.estado === "COMPLETADA");
+          const unidadesVendidas = trx.reduce((s, t) => s + t.cantidad, 0);
+          const ingresos = trx.reduce((s, t) => s + t.total, 0);
+          const entregadas = resumen.entregada || 1;
+          return {
+            convenio_id: producto.id, convenio_nombre: `${cc.nombre} · ${producto.nombre}`,
+            unidades_vendidas: unidadesVendidas, ingresos,
+            disponible: resumen.disponible, entregada: resumen.entregada,
+            tasa_redencion: Math.round((resumen.entregada / entregadas) * 100),
+          };
+        })
+      );
   }
 
   // ---- TICKETS ------------------------------------------------------------
@@ -699,7 +755,7 @@ async function handle(method, fullPath, body) {
     return { __blob: fakePdfBlob(ticket?.codigo ?? "Ticket BEET") };
   }
 
-  // ---- TRANSACCIONES --------------------------------------------------
+  // ---- TRANSACCIONES (compra del afiliado) -------------------------------
   if (is("api", "transacciones", "comprar") && method === "POST") {
     const afiliado = currentAfiliado();
     return ejecutarCompra(afiliado, body);
@@ -717,7 +773,7 @@ async function handle(method, fullPath, body) {
   if (is("api", "transacciones") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    const afiliadosScope = db.afiliados.filter((a) => a.cooperativa_id === scope).map((a) => a.id);
+    const afiliadosScope = db.afiliados.filter((a) => a.id_cooperativa === scope).map((a) => a.id);
     let rows = db.transacciones.filter((t) => afiliadosScope.includes(t.afiliado_id));
     const estado = q.get("estado");
     if (estado) rows = rows.filter((t) => t.estado === estado);

@@ -6,7 +6,6 @@ import { StatusBadge } from '../../../components/ui/Badge';
 import Avatar from '../../../components/ui/Avatar';
 import Button from '../../../components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
-import Alert from '../../../components/ui/Alert';
 import { IconFirma } from '../../../components/ui/Icons';
 import * as transaccionesService from '../../../services/transaccionesService';
 import * as afiliadosService from '../../../services/afiliadosService';
@@ -40,7 +39,24 @@ export default function TransaccionDetail() {
       .then((t) => {
         setTrx(t);
         afiliadosService.obtenerAfiliado(t.afiliado_id).then(setAfiliado).catch(() => setAfiliado(null));
-        convenioService.obtenerConvenio(t.convenio_id).then(setConvenio).catch(() => setConvenio(null));
+        // `obtenerConvenio` takes a cooperativas_convenios id, not a
+        // producto id — resolve the producto's owning convenio the same
+        // way TransaccionesList does: find which convenio's productos
+        // include this transaction's id_producto.
+        convenioService
+          .listarConvenios({ pageSize: 100 })
+          .then((data) =>
+            Promise.all(
+              data.items.map((c) =>
+                convenioService
+                  .listarProductosDeConvenio(c.id_convenio)
+                  .then((productos) => (productos.some((p) => p.id === t.id_producto) ? { ...c, producto: productos.find((p) => p.id === t.id_producto) } : null))
+                  .catch(() => null)
+              )
+            )
+          )
+          .then((matches) => setConvenio(matches.find(Boolean) ?? null))
+          .catch(() => setConvenio(null));
         if (t.metodo_pago === 'CUPO') {
           documentosService
             .listarDocumentos({ pageSize: 100 })
@@ -67,7 +83,7 @@ export default function TransaccionDetail() {
       <div className="page-header">
         <div>
           <span className="text-label text-mono">TRX-{trx.id}</span>
-          <h1 className="text-h1 page-title">{convenio?.nombre ?? 'Convenio'}</h1>
+          <h1 className="text-h1 page-title">{convenio ? `${convenio.nombre} · ${convenio.producto.nombre}` : 'Convenio'}</h1>
           <p className="page-subtitle">{formatDateTime(trx.created_at)}</p>
         </div>
         <div className="page-header-actions">
@@ -79,7 +95,7 @@ export default function TransaccionDetail() {
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 14 }}>Detalle de la compra</div>
           <div className="grid grid-3">
-            <Detail label="Convenio" value={convenio?.nombre} />
+            <Detail label="Convenio" value={convenio ? `${convenio.nombre} · ${convenio.producto.nombre}` : undefined} />
             <Detail label="Unidades" value={trx.cantidad} />
             <Detail label="Subtotal" value={formatCOP(trx.subtotal)} />
             <Detail label="Total" value={formatCOP(trx.total)} />
@@ -99,16 +115,6 @@ export default function TransaccionDetail() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {(trx.estado === 'RECHAZADA' || trx.estado === 'CANCELADA') && (
-            <div style={{ marginTop: 20 }}>
-              <Alert tone="error" title={trx.estado === 'RECHAZADA' ? 'La compra fue rechazada' : 'La compra fue cancelada'}>
-                {trx.estado === 'RECHAZADA'
-                  ? 'La transacción quedó registrada como rechazada — típicamente por saldo de cupo o inventario insuficiente al momento de la compra.'
-                  : 'La transacción fue cancelada.'}
-              </Alert>
             </div>
           )}
         </Card>

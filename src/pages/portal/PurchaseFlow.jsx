@@ -34,6 +34,9 @@ export default function PurchaseFlow() {
   const [compraError, setCompraError] = useState('');
   const [compraErrorTipo, setCompraErrorTipo] = useState(null); // 'rechazado_fondos' | 'rechazado_invalida' | 'error_pasarela' | null
 
+  // El catálogo del afiliado lista PRODUCTOS (un convenio puede tener
+  // varios, ej. Cine Colombia → Entrada 2D / Entrada 3D) — `id` aquí es el
+  // id del producto, y `convenio_nombre` es el convenio al que pertenece.
   useEffect(() => {
     convenioService
       .obtenerCatalogoAfiliado()
@@ -73,25 +76,13 @@ export default function PurchaseFlow() {
     setCompraErrorTipo(null);
     try {
       const trx = await transaccionesService.comprar({
-        convenio_id: convenio.id,
+        producto_id: convenio.id,
         cantidad,
         metodo_pago: metodoPago,
         numero_cuotas: metodoPago === 'cupo' ? cuotas : undefined,
         firma_base64: metodoPago === 'cupo' ? firma : undefined,
         numero_tarjeta: metodoPago === 'tarjeta' ? numeroTarjeta : undefined,
       });
-      // A rejected/errored card payment is a successful API call (201)
-      // carrying estado=RECHAZADA — the mock gateway's decline is a real
-      // business outcome, not an HTTP error — so it must be told apart
-      // here from an actually completed purchase. `resultado_pago`
-      // distinguishes the 3 non-approved outcomes so the message (and
-      // whether "reintentar" makes sense) matches what actually happened.
-      if (trx.estado === 'RECHAZADA') {
-        setCompraError(trx.motivo_rechazo || 'Tu banco rechazó el pago.');
-        setCompraErrorTipo(trx.resultado_pago || 'rechazado_fondos');
-        setStep('resumen');
-        return;
-      }
       setResultado(trx);
       setStep('resultado');
       if (metodoPago === 'cupo') {
@@ -103,8 +94,13 @@ export default function PurchaseFlow() {
         refrescarCupo();
       }
     } catch (err) {
+      // A declined/errored card payment (see apiClient.ejecutarCompra) never
+      // persists a transacción — there is no "RECHAZADA" state in the model
+      // (sección 11) — so it's always thrown as an ApiError. `err.detail`
+      // carries the 3 non-approved outcomes so the message (and whether
+      // "reintentar" makes sense) matches what actually happened.
       setCompraError(err.message || 'No fue posible completar la compra.');
-      setCompraErrorTipo(null);
+      setCompraErrorTipo(['rechazado_fondos', 'rechazado_invalida', 'error_pasarela'].includes(err.detail) ? err.detail : null);
       setStep(metodoPago === 'cupo' ? 'firma' : 'resumen');
     }
   };

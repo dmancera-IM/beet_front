@@ -30,8 +30,8 @@ export default function BenefitDetail() {
     return <EmptyState title="Beneficio no encontrado" description="Puede que ya no esté disponible en el catálogo." actionLabel="Volver al catálogo" onAction={() => navigate('/portal/catalogo')} />;
   }
 
-  const ahorro = convenio.precio_publico - convenio.precio_beet;
-  const ahorroPct = Math.round((ahorro / convenio.precio_publico) * 100);
+  const ahorro = convenio.precio_normal - convenio.precio_beet;
+  const ahorroPct = Math.round((ahorro / convenio.precio_normal) * 100);
 
   return (
     <div>
@@ -43,15 +43,16 @@ export default function BenefitDetail() {
 
       <div className="grid detail-grid-2col" style={{ '--col-ratio': '1.1fr 1fr', gap: 20, alignItems: 'start' }}>
         <Card padding="" style={{ overflow: 'hidden' }}>
-          <ConvenioImagenMarca imagenMarcaUrl={convenio.imagen_marca_url} nombre={convenio.nombre} style={{ height: 220 }} />
+          <ConvenioImagenMarca imagenMarcaUrl={convenio.imagen_marca_url} nombre={convenio.convenio_nombre} style={{ height: 220 }} />
         </Card>
 
         <div>
+          <div className="text-label">{convenio.convenio_nombre}</div>
           <h1 className="text-h1" style={{ margin: '0 0 10px' }}>{convenio.nombre}</h1>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
             <span className="text-display tabular">{formatCOP(convenio.precio_beet)}</span>
-            <span className="text-small" style={{ textDecoration: 'line-through' }}>{formatCOP(convenio.precio_publico)}</span>
+            <span className="text-small" style={{ textDecoration: 'line-through' }}>{formatCOP(convenio.precio_normal)}</span>
             <Badge tone="green" dot>Ahorras {formatCOP(ahorro)} ({ahorroPct}%)</Badge>
           </div>
 

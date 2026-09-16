@@ -30,7 +30,7 @@ export default function DocumentDetail() {
           const trx = await transaccionesService.miTransaccion(found.transaccion_id).catch(() => null);
           if (trx) {
             const catalogo = await convenioService.obtenerCatalogoAfiliado();
-            setConvenio(catalogo.find((c) => c.id === trx.convenio_id) ?? null);
+            setConvenio(catalogo.find((c) => c.id === trx.id_producto) ?? null);
           }
         }
       })

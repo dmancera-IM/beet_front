@@ -8,11 +8,11 @@ import { apiClient } from "./apiClient";
 // `numero_tarjeta` is required for TARJETA — it drives the sandbox
 // gateway's simulated outcome by its last 4 digits (see
 // backend/app/services/payment_gateway.py); never sent for CUPO.
-export function comprar({ convenio_id, cantidad, metodo_pago, numero_cuotas, firma_base64, numero_tarjeta }) {
+export function comprar({ producto_id, cantidad, metodo_pago, numero_cuotas, firma_base64, numero_tarjeta }) {
   return apiClient.post(
     "/api/transacciones/comprar",
     {
-      convenio_id,
+      producto_id,
       cantidad,
       metodo_pago: String(metodo_pago).toUpperCase(),
       numero_cuotas: numero_cuotas ?? null,

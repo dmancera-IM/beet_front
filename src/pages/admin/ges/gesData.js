@@ -1,28 +1,78 @@
 // Capa de datos 100% ficticia para la sección GES (catálogo maestro de
-// convenios, Storage central y cooperativas). A diferencia del resto del
-// proyecto, GES todavía no tiene backend — por eso vive aislada aquí en
-// lugar de en src/services (que sí llaman a la API real vía apiClient) y no
-// debe importarse desde fuera de pages/admin/ges, salvo lectura del
-// catálogo maestro de convenios (PROVEEDORES) desde el panel de una
-// cooperativa, que es el flujo que la propia definición funcional pide:
-// GES crea el convenio → catálogo maestro → la cooperativa lo selecciona.
+// convenios, productos_convenio, Storage central y cooperativas). A
+// diferencia del resto del proyecto, GES todavía no tiene backend — por eso
+// vive aislada aquí en lugar de en src/services (que sí llaman a la API
+// real vía apiClient) y no debe importarse desde fuera de pages/admin/ges,
+// salvo lectura del catálogo maestro (PROVEEDORES/PRODUCTOS) desde el panel
+// de una cooperativa, que es el flujo que la propia definición funcional
+// pide: GES crea el convenio y sus productos → catálogo maestro → la
+// cooperativa los selecciona (secciones 6-11 de FRONTEND_DB_ALIGNMENT.md).
 // El "estado" se guarda en memoria (arrays con let/const mutados in-place)
 // para que crear/asignar/solicitar tenga efecto visual durante la sesión;
 // se reinicia al recargar la página.
 
-// Catálogo maestro de convenios administrado por GES. Cualquier página que
-// necesite la lista siempre actualizada debe llamar a getProveedores() (o
-// iterar este mismo array, que se muta in-place con push, nunca se
-// reasigna) en vez de guardar una copia en el momento del import.
+// Catálogo maestro de convenios administrado por GES (tabla `convenios`).
+// Cualquier página que necesite la lista siempre actualizada debe llamar a
+// getProveedores() (o iterar este mismo array, que se muta in-place con
+// push, nunca se reasigna) en vez de guardar una copia en el momento del
+// import.
 export const PROVEEDORES = [
   { id: 'cine-colombia', nombre: 'Cine Colombia', estado: true },
   { id: 'mundo-aventura', nombre: 'Mundo Aventura', estado: true },
   { id: 'exito', nombre: 'Éxito', estado: true },
   { id: 'salitre-magico', nombre: 'Salitre Mágico', estado: false },
+  { id: 'cafe-central', nombre: 'Café Central', estado: true },
+  { id: 'teatro-nacional', nombre: 'Teatro Nacional', estado: true },
+  { id: 'spa-relax', nombre: 'Spa Relax', estado: true },
 ];
 
 export function getProveedores() {
   return PROVEEDORES;
+}
+
+// productos_convenio: el producto específico que se puede almacenar,
+// comprar y entregar (sección 7). Un producto pertenece a UN convenio; un
+// convenio puede tener varios productos (ej. Cine Colombia → Entrada 2D /
+// Entrada 3D). `productoId` es único en todo el catálogo.
+let nextProductoId = 100;
+export const PRODUCTOS = [
+  { id: 1, proveedorId: 'cine-colombia', nombre: 'Entrada 2D', estado: true },
+  { id: 8, proveedorId: 'cine-colombia', nombre: 'Entrada 3D', estado: true },
+  { id: 2, proveedorId: 'mundo-aventura', nombre: 'Entrada General', estado: true },
+  { id: 3, proveedorId: 'exito', nombre: 'Bono Mercado', estado: true },
+  { id: 9, proveedorId: 'exito', nombre: 'Bono Pan', estado: true },
+  { id: 4, proveedorId: 'salitre-magico', nombre: 'Entrada General', estado: true },
+  { id: 5, proveedorId: 'spa-relax', nombre: 'Sesión de Bienestar', estado: true },
+  { id: 6, proveedorId: 'cafe-central', nombre: 'Bono Desayuno', estado: true },
+  { id: 7, proveedorId: 'teatro-nacional', nombre: 'Boleta General', estado: true },
+];
+
+export function getProductos(proveedorId) {
+  return PRODUCTOS.filter((p) => p.proveedorId === proveedorId);
+}
+
+export function getProducto(productoId) {
+  // eslint-disable-next-line eqeqeq
+  return PRODUCTOS.find((p) => p.id == productoId) ?? null;
+}
+
+// Agrega un producto nuevo a un convenio del catálogo maestro (sección 7 —
+// "GES puede crear convenios/productos"). Todavía no se definen precios ni
+// condiciones acá: eso lo configura cada cooperativa por su lado
+// (cooperativas_convenios).
+export function agregarProducto({ proveedorId, nombre }) {
+  const limpio = (nombre || '').trim();
+  if (!limpio) throw new Error('El nombre del producto es obligatorio.');
+  if (!proveedorId) throw new Error('Selecciona un convenio.');
+  const nuevo = { id: nextProductoId++, proveedorId, nombre: limpio, estado: true };
+  PRODUCTOS.push(nuevo);
+  return nuevo;
+}
+
+export function toggleProducto(productoId) {
+  const p = getProducto(productoId);
+  if (!p) return;
+  p.estado = !p.estado;
 }
 
 const slugify = (nombre) =>
@@ -48,8 +98,8 @@ export function agregarConvenioCatalogo(nombre) {
 
 // Activa/desactiva un convenio en el catálogo MAESTRO de GES — independiente
 // del switch que cada cooperativa tiene sobre su propia copia del convenio
-// (services/mockDb.js `convenios[].estado`, ver ConveniosList.jsx del
-// administrador). Uno controla si el convenio existe para todo BEET; el
+// (services/mockDb.js `cooperativasConvenios[].estado`, ver ConveniosList.jsx
+// del administrador). Uno controla si el convenio existe para todo BEET; el
 // otro si esa cooperativa en particular se lo muestra a sus afiliados.
 export function toggleConvenioCatalogo(id) {
   const p = PROVEEDORES.find((x) => x.id === id);
@@ -57,15 +107,32 @@ export function toggleConvenioCatalogo(id) {
   p.estado = !p.estado;
 }
 
-// Inventario que GES recibió de sus proveedores y todavía no ha asignado a
-// ninguna cooperativa. Lo "asignado" y el "total" se derivan de
-// `asignaciones` más abajo, para que nunca queden desincronizados.
-const inventarioCentralBase = [
-  { proveedorId: 'cine-colombia', disponible: 4000 },
-  { proveedorId: 'mundo-aventura', disponible: 2500 },
-  { proveedorId: 'exito', disponible: 1800 },
-  { proveedorId: 'salitre-magico', disponible: 900 },
-];
+// ---------------------------------------------------------------------------
+// Storage central — códigos individuales que GES recibió de sus
+// proveedores y todavía no ha asignado a ninguna cooperativa (sección 8).
+// Cada fila es una unidad/código real, nunca solo un número agregado; las
+// vistas de resumen (getInventarioCentral) se calculan contando estas filas.
+// ---------------------------------------------------------------------------
+
+let nextStorageId = 1;
+export const STORAGE = [];
+function sembrarStorage(productoId, prefijo, cantidadDisponible, cantidadAsignada) {
+  for (let i = 0; i < cantidadDisponible; i++) {
+    STORAGE.push({ id: nextStorageId++, productoId, codigo: `${prefijo}-S${String(i + 1).padStart(5, '0')}`, estado: 'DISPONIBLE', fechaVencimiento: null });
+  }
+  for (let i = 0; i < cantidadAsignada; i++) {
+    STORAGE.push({ id: nextStorageId++, productoId, codigo: `${prefijo}-A${String(i + 1).padStart(5, '0')}`, estado: 'ASIGNADO', fechaVencimiento: null });
+  }
+}
+sembrarStorage(1, 'CIN2D', 3000, 1000); // Cine Colombia · Entrada 2D
+sembrarStorage(8, 'CIN3D', 1000, 400); // Cine Colombia · Entrada 3D
+sembrarStorage(2, 'AVE', 2200, 300); // Mundo Aventura · Entrada General
+sembrarStorage(3, 'EXIM', 1500, 550); // Éxito · Bono Mercado
+sembrarStorage(9, 'EXIP', 300, 100); // Éxito · Bono Pan
+sembrarStorage(4, 'SAL', 800, 100); // Salitre Mágico · Entrada General
+sembrarStorage(6, 'CAF', 250, 150); // Café Central · Bono Desayuno
+sembrarStorage(7, 'TEA', 200, 50); // Teatro Nacional · Boleta General
+// spa-relax (producto 5) deliberadamente sin Storage todavía.
 
 // Dinero mock que GES tiene disponible para comprarle bonos/boletas a sus
 // proveedores. Puramente informativo — no hay pagos, pasarela ni reglas de
@@ -88,36 +155,38 @@ let cooperativas = [
   { id: 3, nombre: 'Cooperativa Horizonte', estado: 'Inactiva', fechaCreacion: '2024-02-01', afiliados: 0, cupoDisponible: 0, cupoGastado: 0 },
 ];
 
-// Una fila por combinación (cooperativa, proveedor): cuánto Storage le ha
+// Una fila por combinación (cooperativa, producto): cuánto Storage le ha
 // asignado GES a esa cooperativa hasta ahora (`cantidad`) y cuánto de eso
 // ya vendió la cooperativa a sus afiliados (`vendidas`) — la diferencia es
-// lo que la cooperativa todavía tiene disponible. Mock puro.
+// lo que la cooperativa todavía tiene disponible. Mock puro (agregado; los
+// códigos individuales ya asignados viven en STORAGE con estado ASIGNADO).
 let asignaciones = [
-  { cooperativaId: 1, proveedorId: 'cine-colombia', cantidad: 1000, vendidas: 300, fecha: '2026-08-01' },
-  { cooperativaId: 1, proveedorId: 'mundo-aventura', cantidad: 300, vendidas: 100, fecha: '2026-07-12' },
-  { cooperativaId: 1, proveedorId: 'exito', cantidad: 600, vendidas: 150, fecha: '2026-06-20' },
-  { cooperativaId: 1, proveedorId: 'salitre-magico', cantidad: 50, vendidas: 20, fecha: '2026-05-02' },
-  { cooperativaId: 2, proveedorId: 'mundo-aventura', cantidad: 200, vendidas: 80, fecha: '2026-08-15' },
-  { cooperativaId: 2, proveedorId: 'exito', cantidad: 50, vendidas: 20, fecha: '2026-07-30' },
-  { cooperativaId: 2, proveedorId: 'cine-colombia', cantidad: 400, vendidas: 150, fecha: '2026-08-20' },
+  { cooperativaId: 1, productoId: 1, cantidad: 1000, vendidas: 300, fecha: '2026-08-01' },
+  { cooperativaId: 1, productoId: 2, cantidad: 300, vendidas: 100, fecha: '2026-07-12' },
+  { cooperativaId: 1, productoId: 3, cantidad: 600, vendidas: 150, fecha: '2026-06-20' },
+  { cooperativaId: 1, productoId: 4, cantidad: 50, vendidas: 20, fecha: '2026-05-02' },
+  { cooperativaId: 2, productoId: 2, cantidad: 200, vendidas: 80, fecha: '2026-08-15' },
+  { cooperativaId: 2, productoId: 3, cantidad: 50, vendidas: 20, fecha: '2026-07-30' },
+  { cooperativaId: 2, productoId: 1, cantidad: 400, vendidas: 150, fecha: '2026-08-20' },
   // cooperativa 3 (Horizonte) deliberadamente sin nada asignado — cooperativa
   // inactiva y vacía, igual que en services/mockDb.js.
 ];
 
-// Transacciones GES ↔ cooperativa: quién las hizo (administrador), con qué
-// forma de pago y en qué estado. `formaPago` y `estado` son puramente de
-// demostración (Cupo/Crédito, Pendiente/Completada) — no hay reglas
-// financieras ni de aprobación manual todavía. Solo existen estos dos
-// estados: "Pendiente" (la operación todavía no puede completarse, ej. no
-// hay inventario suficiente) y "Completada" (ya se realizó y el inventario
-// correspondiente fue asignado/vendido).
+// Transacciones GES ↔ cooperativa (tabla `transacciones`, sección 11):
+// quién las hizo (usuario/administrador), con qué forma de pago y en qué
+// estado. `formaPago` y `estado` son puramente de demostración (Cupo/
+// Crédito, Pendiente/Completada) — no hay reglas financieras ni de
+// aprobación manual todavía. Solo existen estos dos estados: "Pendiente"
+// (la operación todavía no puede completarse, ej. no hay inventario
+// suficiente) y "Completada" (ya se realizó y el inventario correspondiente
+// fue asignado/vendido). Nunca "Aprobada"/"Rechazada"/"Disponible".
 let solicitudes = [
-  { id: 'sol-1', cooperativaId: 1, proveedorId: 'cine-colombia', cantidad: 1000, estado: 'Completada', fecha: '2026-09-10', administrador: 'Carlos Gómez', formaPago: 'Cupo' },
-  { id: 'sol-2', cooperativaId: 2, proveedorId: 'mundo-aventura', cantidad: 200, estado: 'Completada', fecha: '2026-08-15', administrador: 'Andrés Ruiz', formaPago: 'Crédito' },
-  { id: 'sol-3', cooperativaId: 1, proveedorId: 'exito', cantidad: 200, estado: 'Pendiente', fecha: '2026-09-08', administrador: 'Carlos Gómez', formaPago: 'Cupo' },
-  { id: 'sol-4', cooperativaId: 1, proveedorId: 'salitre-magico', cantidad: 150, estado: 'Pendiente', fecha: '2026-08-28', administrador: 'Carlos Gómez', formaPago: 'Crédito' },
-  { id: 'sol-5', cooperativaId: 2, proveedorId: 'cine-colombia', cantidad: 300, estado: 'Completada', fecha: '2026-09-01', administrador: 'Andrés Ruiz', formaPago: 'Cupo' },
-  { id: 'sol-6', cooperativaId: 2, proveedorId: 'exito', cantidad: 50, estado: 'Completada', fecha: '2026-07-30', administrador: 'Andrés Ruiz', formaPago: 'Crédito' },
+  { id: 'sol-1', cooperativaId: 1, productoId: 1, cantidad: 1000, estado: 'Completada', fecha: '2026-09-10', administrador: 'Carlos Gómez', formaPago: 'Cupo' },
+  { id: 'sol-2', cooperativaId: 2, productoId: 2, cantidad: 200, estado: 'Completada', fecha: '2026-08-15', administrador: 'Andrés Ruiz', formaPago: 'Crédito' },
+  { id: 'sol-3', cooperativaId: 1, productoId: 3, cantidad: 200, estado: 'Pendiente', fecha: '2026-09-08', administrador: 'Carlos Gómez', formaPago: 'Cupo' },
+  { id: 'sol-4', cooperativaId: 1, productoId: 4, cantidad: 150, estado: 'Pendiente', fecha: '2026-08-28', administrador: 'Carlos Gómez', formaPago: 'Crédito' },
+  { id: 'sol-5', cooperativaId: 2, productoId: 1, cantidad: 300, estado: 'Completada', fecha: '2026-09-01', administrador: 'Andrés Ruiz', formaPago: 'Cupo' },
+  { id: 'sol-6', cooperativaId: 2, productoId: 3, cantidad: 50, estado: 'Completada', fecha: '2026-07-30', administrador: 'Andrés Ruiz', formaPago: 'Crédito' },
 ];
 
 // Usuarios administradores que GES creó directamente para una cooperativa
@@ -127,40 +196,57 @@ let solicitudes = [
 let usuariosGes = [];
 
 const nombreProveedor = (id) => PROVEEDORES.find((p) => p.id === id)?.nombre ?? id;
+const nombreProducto = (id) => getProducto(id)?.nombre ?? String(id);
 const nombreCooperativa = (id) => cooperativas.find((c) => c.id === id)?.nombre ?? id;
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 
+// Resumen de Storage: una fila POR PRODUCTO (nunca solo "Cine Colombia:
+// 1000" — sección 8), contando los códigos individuales reales en STORAGE.
 export function getInventarioCentral() {
-  return PROVEEDORES.map((p) => {
-    const base = inventarioCentralBase.find((i) => i.proveedorId === p.id);
-    const disponible = base?.disponible ?? 0;
-    const asignado = asignaciones
-      .filter((a) => a.proveedorId === p.id)
-      .reduce((sum, a) => sum + a.cantidad, 0);
-    return { proveedorId: p.id, proveedor: p.nombre, estado: p.estado, disponible, asignado, total: disponible + asignado };
+  return PRODUCTOS.map((p) => {
+    const disponible = STORAGE.filter((s) => s.productoId === p.id && s.estado === 'DISPONIBLE').length;
+    const asignado = STORAGE.filter((s) => s.productoId === p.id && s.estado === 'ASIGNADO').length;
+    return {
+      proveedorId: p.proveedorId,
+      proveedor: nombreProveedor(p.proveedorId),
+      productoId: p.id,
+      producto: p.nombre,
+      estado: p.estado,
+      disponible,
+      asignado,
+      total: disponible + asignado,
+    };
   });
 }
 
-// Suma al Storage central lo que GES recibió de un proveedor. Si el
-// convenio todavía no tenía fila en el Storage (ej. uno recién agregado al
-// catálogo maestro), la crea. Simulación visual — sin compras ni pagos
-// reales todavía.
-export function agregarStorage({ proveedorId, cantidad }) {
+// Suma al Storage central lo que GES recibió de un proveedor para UN
+// producto — genera `cantidad` códigos individuales nuevos en estado
+// DISPONIBLE (simulación visual del XML del proveedor; el contenido del
+// archivo no se procesa todavía).
+export function agregarStorage({ productoId, cantidad, fechaVencimiento }) {
   const n = Number(cantidad);
   if (!n || n <= 0) throw new Error('La cantidad debe ser mayor a 0.');
-  if (!proveedorId) throw new Error('Selecciona un convenio.');
-  const fila = inventarioCentralBase.find((i) => i.proveedorId === proveedorId);
-  if (fila) {
-    fila.disponible += n;
-  } else {
-    inventarioCentralBase.push({ proveedorId, disponible: n });
+  const producto = getProducto(productoId);
+  if (!producto) throw new Error('Selecciona un producto.');
+  const prefijo = producto.nombre.slice(0, 3).toUpperCase();
+  for (let i = 0; i < n; i++) {
+    STORAGE.push({ id: nextStorageId++, productoId: producto.id, codigo: `${prefijo}-${Date.now()}-${i}`, estado: 'DISPONIBLE', fechaVencimiento: fechaVencimiento ?? null });
   }
-  return getInventarioCentral().find((i) => i.proveedorId === proveedorId);
+  return getInventarioCentral().find((i) => i.productoId === producto.id);
 }
 
 export function getAsignacionesPorProveedor(proveedorId) {
+  const productoIds = new Set(getProductos(proveedorId).map((p) => p.id));
   return asignaciones
-    .filter((a) => a.proveedorId === proveedorId && a.cantidad > 0)
+    .filter((a) => productoIds.has(a.productoId) && a.cantidad > 0)
+    .map((a) => ({ ...a, cooperativaNombre: nombreCooperativa(a.cooperativaId), productoNombre: nombreProducto(a.productoId) }))
+    .sort((a, b) => b.cantidad - a.cantidad);
+}
+
+export function getAsignacionesPorProducto(productoId) {
+  // eslint-disable-next-line eqeqeq
+  return asignaciones
+    .filter((a) => a.productoId == productoId && a.cantidad > 0)
     .map((a) => ({ ...a, cooperativaNombre: nombreCooperativa(a.cooperativaId) }))
     .sort((a, b) => b.cantidad - a.cantidad);
 }
@@ -229,18 +315,31 @@ export function getAsignacionesPorCooperativa(cooperativaId) {
   return asignaciones
     // eslint-disable-next-line eqeqeq
     .filter((a) => a.cooperativaId == cooperativaId && a.cantidad > 0)
-    .map((a) => ({
-      ...a,
-      proveedorNombre: nombreProveedor(a.proveedorId),
-      vendidas: a.vendidas ?? 0,
-      disponibles: a.cantidad - (a.vendidas ?? 0),
-    }))
+    .map((a) => {
+      const producto = getProducto(a.productoId);
+      return {
+        ...a,
+        proveedorId: producto?.proveedorId ?? null,
+        proveedorNombre: producto ? nombreProveedor(producto.proveedorId) : nombreProducto(a.productoId),
+        productoNombre: nombreProducto(a.productoId),
+        vendidas: a.vendidas ?? 0,
+        disponibles: a.cantidad - (a.vendidas ?? 0),
+      };
+    })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 }
 
 export function getSolicitudes() {
   return solicitudes
-    .map((s) => ({ ...s, cooperativaNombre: nombreCooperativa(s.cooperativaId), proveedorNombre: nombreProveedor(s.proveedorId) }))
+    .map((s) => {
+      const producto = getProducto(s.productoId);
+      return {
+        ...s,
+        cooperativaNombre: nombreCooperativa(s.cooperativaId),
+        proveedorNombre: producto ? nombreProveedor(producto.proveedorId) : nombreProducto(s.productoId),
+        productoNombre: nombreProducto(s.productoId),
+      };
+    })
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 }
 
@@ -256,9 +355,9 @@ export function getActividadPorCooperativa(cooperativaId) {
     .filter((a) => a.cooperativaId == cooperativaId && a.cantidad > 0)
     .forEach((a) => {
       eventos.push({
-        id: `asg-${a.proveedorId}`,
+        id: `asg-${a.productoId}`,
         fecha: a.fecha,
-        texto: `Inventario asignado · ${nombreProveedor(a.proveedorId)}`,
+        texto: `Inventario asignado · ${nombreProducto(a.productoId)}`,
         detalle: `${a.cantidad.toLocaleString('es-CO')} unidades`,
       });
     });
@@ -269,33 +368,34 @@ export function getActividadPorCooperativa(cooperativaId) {
       eventos.push({
         id: `sol-${s.id}`,
         fecha: s.fecha,
-        texto: `Transacción · ${nombreProveedor(s.proveedorId)}`,
+        texto: `Transacción · ${nombreProducto(s.productoId)}`,
         detalle: `${s.cantidad.toLocaleString('es-CO')} unidades · ${s.estado}`,
       });
     });
   return eventos.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 }
 
-function registrarAsignacion(cooperativaId, proveedorId, cantidad) {
-  const existente = asignaciones.find((a) => a.cooperativaId === cooperativaId && a.proveedorId === proveedorId);
+function registrarAsignacion(cooperativaId, productoId, cantidad) {
+  const existente = asignaciones.find((a) => a.cooperativaId === cooperativaId && a.productoId === productoId);
   if (existente) {
     existente.cantidad += cantidad;
     existente.fecha = hoyISO();
   } else {
-    asignaciones.push({ cooperativaId, proveedorId, cantidad, vendidas: 0, fecha: hoyISO() });
+    asignaciones.push({ cooperativaId, productoId, cantidad, vendidas: 0, fecha: hoyISO() });
   }
 }
 
 // Simulación visual únicamente: valida cantidad > 0 y cantidad <= disponible
-// en GES, descuenta del Storage central y suma a lo asignado de la
-// cooperativa. La lógica definitiva se implementará en Python/FastAPI.
-export function asignarInventario({ cooperativaId, proveedorId, cantidad }) {
+// en GES, marca esa cantidad de códigos DISPONIBLE de STORAGE como
+// ASIGNADO y suma a lo asignado de la cooperativa. La lógica definitiva se
+// implementará en Python/FastAPI.
+export function asignarInventario({ cooperativaId, productoId, cantidad }) {
   const n = Number(cantidad);
   if (!n || n <= 0) throw new Error('La cantidad debe ser mayor a 0.');
-  const inv = inventarioCentralBase.find((i) => i.proveedorId === proveedorId);
-  if (!inv || n > inv.disponible) throw new Error('La cantidad supera el inventario disponible en GES.');
-  inv.disponible -= n;
-  registrarAsignacion(cooperativaId, proveedorId, n);
+  const disponibles = STORAGE.filter((s) => s.productoId === Number(productoId) && s.estado === 'DISPONIBLE');
+  if (n > disponibles.length) throw new Error('La cantidad supera el inventario disponible en GES.');
+  for (let i = 0; i < n; i++) disponibles[i].estado = 'ASIGNADO';
+  registrarAsignacion(cooperativaId, Number(productoId), n);
 }
 
 // Usada por el formulario "Comprar bonos / boletas a GES" del panel del
@@ -304,16 +404,21 @@ export function asignarInventario({ cooperativaId, proveedorId, cantidad }) {
 // visualmente si el Storage de GES ya tiene inventario suficiente para esa
 // cantidad ("Completada": se asigna de inmediato) o no ("Pendiente") — no
 // hay lógica de aprobación/backend real todavía (ver sección 10).
-export function crearSolicitudDesdeCooperativa({ cooperativaId, proveedorId, cantidad, administrador, formaPago }) {
+export function crearSolicitudDesdeCooperativa({ cooperativaId, productoId, cantidad, administrador, formaPago }) {
   const n = Number(cantidad);
   if (!n || n <= 0) throw new Error('La cantidad debe ser mayor a 0.');
-  if (!proveedorId) throw new Error('Selecciona un convenio.');
-  const inv = inventarioCentralBase.find((i) => i.proveedorId === proveedorId);
-  const estado = inv && inv.disponible >= n ? 'Completada' : 'Pendiente';
+  if (!productoId) throw new Error('Selecciona un producto.');
+  const disponibles = STORAGE.filter((s) => s.productoId === Number(productoId) && s.estado === 'DISPONIBLE').length;
+  const estado = disponibles >= n ? 'Completada' : 'Pendiente';
+  if (estado === 'Completada') {
+    const libres = STORAGE.filter((s) => s.productoId === Number(productoId) && s.estado === 'DISPONIBLE');
+    for (let i = 0; i < n; i++) libres[i].estado = 'ASIGNADO';
+    registrarAsignacion(cooperativaId, Number(productoId), n);
+  }
   const solicitud = {
     id: `sol-${Date.now()}`,
     cooperativaId,
-    proveedorId,
+    productoId: Number(productoId),
     cantidad: n,
     estado,
     fecha: hoyISO(),

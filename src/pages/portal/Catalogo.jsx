@@ -27,7 +27,8 @@ export default function Catalogo() {
   useEffect(() => { cargar(); }, []);
 
   const filtrados = convenios.filter((c) => {
-    if (search.trim() && !c.nombre.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    const term = search.trim().toLowerCase();
+    if (term && !c.nombre.toLowerCase().includes(term) && !c.convenio_nombre.toLowerCase().includes(term)) return false;
     return true;
   });
 

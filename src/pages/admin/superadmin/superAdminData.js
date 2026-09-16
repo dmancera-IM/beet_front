@@ -5,7 +5,7 @@
 // admin es el único rol que puede ver ambos mundos a la vez (sección 13).
 // No hace ningún fetch ni crea endpoints nuevos: es una lectura síncrona,
 // igual que pages/admin/ges/gesData.js.
-import { cooperativas, afiliados, convenios, unidadesInventario, transacciones } from '../../../services/mockDb';
+import { cooperativas, afiliados, cooperativasConvenios, productosConvenio, unidadesInventario, transacciones } from '../../../services/mockDb';
 import { getCooperativas as getCooperativasGes } from '../ges/gesData';
 
 function cupoDeCooperativa(cooperativaId) {
@@ -14,7 +14,7 @@ function cupoDeCooperativa(cooperativaId) {
 }
 
 function afiliadosDe(cooperativaId) {
-  return afiliados.filter((a) => a.cooperativa_id === cooperativaId);
+  return afiliados.filter((a) => a.id_cooperativa === cooperativaId);
 }
 
 function ventasDe(idsAfiliados) {
@@ -27,8 +27,10 @@ export function getResumenGlobal() {
   const cooperativasActivas = cooperativas.filter((c) => c.estado).length;
   const transaccionesCompletadas = transacciones.filter((t) => t.estado === 'COMPLETADA');
   const bonosVendidos = transaccionesCompletadas.reduce((sum, t) => sum + t.cantidad, 0);
-  const inventarioDisponible = unidadesInventario.filter((u) => u.estado === 'disponible').length;
-  const inventarioVendido = unidadesInventario.filter((u) => u.estado === 'entregada' || u.estado === 'redimida').length;
+  const inventarioDisponible = unidadesInventario.filter((u) => u.estado === 'DISPONIBLE').length;
+  // BEET no controla la redención del bono (sección 13): "vendido" aquí
+  // solo significa que ya fue entregado al afiliado, nunca "usado/redimido".
+  const inventarioVendido = unidadesInventario.filter((u) => u.estado === 'ENTREGADA').length;
   const solicitudesPendientes = getCooperativasGes().reduce((sum, c) => sum + c.solicitudesPendientes, 0);
 
   return {
@@ -53,18 +55,25 @@ export function getVentasPorCooperativa() {
 }
 
 export function getConveniosMasUtilizados() {
-  const cantidadPorConvenio = {};
+  const cantidadPorProducto = {};
   transacciones
     .filter((t) => t.estado === 'COMPLETADA')
     .forEach((t) => {
-      cantidadPorConvenio[t.convenio_id] = (cantidadPorConvenio[t.convenio_id] ?? 0) + t.cantidad;
+      cantidadPorProducto[t.id_producto] = (cantidadPorProducto[t.id_producto] ?? 0) + t.cantidad;
     });
-  return Object.entries(cantidadPorConvenio)
-    .map(([convenioId, cantidad]) => ({
-      id: Number(convenioId),
-      nombre: convenios.find((c) => c.id === Number(convenioId))?.nombre ?? `Convenio ${convenioId}`,
-      cantidad,
-    }))
+  return Object.entries(cantidadPorProducto)
+    .map(([productoId, cantidad]) => {
+      // Un producto pertenece a un convenio (sección 7) — la fila
+      // cooperativas_convenios que lo habilitó es lo que trae el nombre
+      // comercial que ve el afiliado.
+      const producto = productosConvenio.find((p) => p.id === Number(productoId)) ?? null;
+      const cc = producto ? cooperativasConvenios.find((c) => c.id_convenio === producto.id_convenio) : null;
+      return {
+        id: Number(productoId),
+        nombre: cc && producto ? `${cc.nombre} · ${producto.nombre}` : `Producto ${productoId}`,
+        cantidad,
+      };
+    })
     .sort((a, b) => b.cantidad - a.cantidad);
 }
 
@@ -72,8 +81,7 @@ export function getResumenCooperativas() {
   return cooperativas.map((c) => {
     const afiliadosCoop = afiliadosDe(c.id);
     const idsAfiliados = new Set(afiliadosCoop.map((a) => a.id));
-    const conveniosCoop = convenios.filter((cv) => cv.cooperativa_id === c.id);
-    const conveniosIds = new Set(conveniosCoop.map((cv) => cv.id));
+    const conveniosCoop = cooperativasConvenios.filter((cv) => cv.id_cooperativa === c.id);
     const { cupoDisponible, cupoGastado } = cupoDeCooperativa(c.id);
     return {
       id: c.id,
@@ -81,7 +89,7 @@ export function getResumenCooperativas() {
       estado: c.estado,
       afiliados: afiliadosCoop.length,
       conveniosActivos: conveniosCoop.filter((cv) => cv.estado).length,
-      inventario: unidadesInventario.filter((u) => conveniosIds.has(u.convenio_id)).length,
+      inventario: unidadesInventario.filter((u) => u.id_cooperativa === c.id).length,
       ventas: ventasDe(idsAfiliados),
       cupoDisponible,
       cupoGastado,

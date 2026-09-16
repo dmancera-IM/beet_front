@@ -4,6 +4,7 @@ import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card } from '../../../components/ui/Card';
 import { Tabs, Pagination } from '../../../components/ui/Nav';
 import { StatusBadge } from '../../../components/ui/Badge';
+import { Field, Select } from '../../../components/ui/Field';
 import Button from '../../../components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
 import FileUploader from '../../../components/ui/FileUploader';
@@ -17,12 +18,19 @@ import { useToast } from '../../../context/ToastContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
 const TABS = [
-  { key: 'disponible', label: 'Disponibles' },
-  { key: 'entregada', label: 'Entregadas' },
-  { key: 'vencida', label: 'Vencidas' },
+  { key: 'DISPONIBLE', label: 'Disponibles' },
+  { key: 'ENTREGADA', label: 'Entregadas' },
+  { key: 'VENCIDA', label: 'Vencidas' },
+  { key: 'BLOQUEADA', label: 'Bloqueadas' },
   { key: '', label: 'Todo el historial' },
 ];
 
+// NOTE on the route param: `:convenioId` still identifies the
+// cooperativas_convenios row (ConveniosList links here with `c.id`) — but
+// inventory now keys off a PRODUCTO id, and one convenio can have several
+// productos (sección 7). So this page loads the convenio, loads its
+// productos from GES's master catalog, and lets the admin choose which
+// producto's inventory to view/load with a Select at the top.
 export default function InventarioConvenio() {
   const { convenioId } = useParams();
   const navigate = useNavigate();
@@ -31,8 +39,10 @@ export default function InventarioConvenio() {
 
   const [convenio, setConvenio] = useState(null);
   const [loadingConvenio, setLoadingConvenio] = useState(true);
+  const [productos, setProductos] = useState([]);
+  const [productoId, setProductoId] = useState('');
 
-  const [tab, setTab] = useState('disponible');
+  const [tab, setTab] = useState('DISPONIBLE');
   const [page, setPage] = useState(1);
   const [unidades, setUnidades] = useState({ items: [], total: 0, page: 1, page_size: 8 });
   const [loadingUnidades, setLoadingUnidades] = useState(true);
@@ -50,20 +60,28 @@ export default function InventarioConvenio() {
     setLoadingConvenio(true);
     convenioService
       .obtenerConvenio(convenioId)
-      .then(setConvenio)
+      .then((c) => {
+        setConvenio(c);
+        return convenioService.listarProductosDeConvenio(c.id_convenio);
+      })
+      .then((prods) => {
+        setProductos(prods);
+        setProductoId((prev) => prev || String(prods[0]?.id ?? ''));
+      })
       .catch(() => setConvenio(null))
       .finally(() => setLoadingConvenio(false));
   }, [convenioId]);
 
   const cargarUnidades = useCallback(() => {
+    if (!productoId) { setUnidades({ items: [], total: 0, page: 1, page_size: 8 }); setLoadingUnidades(false); return; }
     setLoadingUnidades(true);
     setError(null);
     inventarioService
-      .listarInventario(convenioId, { estado: tab || undefined, page, pageSize: 8 })
+      .listarInventario(productoId, { estado: tab || undefined, page, pageSize: 8 })
       .then(setUnidades)
       .catch((err) => setError(err.message))
       .finally(() => setLoadingUnidades(false));
-  }, [convenioId, tab, page]);
+  }, [productoId, tab, page]);
 
   useEffect(() => { cargarUnidades(); }, [cargarUnidades]);
 
@@ -80,7 +98,7 @@ export default function InventarioConvenio() {
     }
     setUploading(true);
     try {
-      const result = await inventarioService.cargaInventario(convenioId, file);
+      const result = await inventarioService.cargaInventario(productoId, file);
       // A 200 response only means the file was PROCESSED — invalid/duplicate
       // rows still happened, so the box color reflects that instead of
       // always claiming unconditional success.
@@ -112,6 +130,17 @@ export default function InventarioConvenio() {
           <Button variant="secondary" icon={<IconDescargar size={15} color="#1F2937" />}>Descargar detalle de códigos</Button>
         </div>
       </div>
+
+      <Card padding="card-pad-lg" className="section-gap">
+        <Field label="Producto" hint={productos.length === 0 ? 'GES todavía no registró productos para este convenio.' : 'Un convenio puede tener varios productos; el inventario se administra por separado para cada uno.'}>
+          <Select value={productoId} onChange={(e) => { setProductoId(e.target.value); setPage(1); }} disabled={productos.length === 0}>
+            {productos.length === 0 && <option value="">Sin productos</option>}
+            {productos.map((p) => (
+              <option key={p.id} value={p.id}>{p.nombre}</option>
+            ))}
+          </Select>
+        </Field>
+      </Card>
 
       <PermissionGate>
         <Card padding="card-pad-lg" className="section-gap">
@@ -165,7 +194,7 @@ export default function InventarioConvenio() {
                       <tr key={u.id}>
                         <td className="text-mono">{u.codigo}</td>
                         <td><StatusBadge status={u.estado} /></td>
-                        <td className="text-small">{formatDate(u.fecha_ingreso)}</td>
+                        <td className="text-small">{formatDate(u.fecha_asignacion)}</td>
                       </tr>
                     ))}
                   </tbody>

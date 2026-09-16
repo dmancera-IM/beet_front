@@ -29,6 +29,7 @@ export default function SolicitudesTable({ solicitudes, showCooperativa = true }
               {showCooperativa && <th>Cooperativa</th>}
               <th>Administrador</th>
               <th>Convenio</th>
+              <th>Producto</th>
               <th className="right">Cantidad</th>
               <th>Fecha</th>
               <th>Forma de pago</th>
@@ -42,6 +43,7 @@ export default function SolicitudesTable({ solicitudes, showCooperativa = true }
                 {showCooperativa && <td className="cell-primary">{s.cooperativaNombre}</td>}
                 <td className="text-small">{s.administrador ?? '—'}</td>
                 <td className="text-small">{s.proveedorNombre}</td>
+                <td className="text-small">{s.productoNombre}</td>
                 <td className="right tabular">{s.cantidad.toLocaleString('es-CO')}</td>
                 <td className="text-small">{formatDate(s.fecha)}</td>
                 <td>{s.formaPago ? <Badge tone={FORMA_PAGO_TONE[s.formaPago] ?? 'neutral'}>{s.formaPago}</Badge> : '—'}</td>
@@ -66,6 +68,7 @@ export default function SolicitudesTable({ solicitudes, showCooperativa = true }
             <div><span className="text-label">Cooperativa</span><div>{detalle.cooperativaNombre}</div></div>
             <div><span className="text-label">Administrador</span><div>{detalle.administrador ?? '—'}</div></div>
             <div><span className="text-label">Convenio</span><div>{detalle.proveedorNombre}</div></div>
+            <div><span className="text-label">Producto</span><div>{detalle.productoNombre}</div></div>
             <div><span className="text-label">Cantidad solicitada</span><div className="tabular">{detalle.cantidad.toLocaleString('es-CO')} unidades</div></div>
             <div><span className="text-label">Fecha de solicitud</span><div>{formatDate(detalle.fecha)}</div></div>
             <div><span className="text-label">Forma de pago</span><div>{detalle.formaPago ? <Badge tone={FORMA_PAGO_TONE[detalle.formaPago] ?? 'neutral'}>{detalle.formaPago}</Badge> : '—'}</div></div>

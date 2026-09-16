@@ -7,7 +7,7 @@ import { IconPlus } from '../../../components/ui/Icons';
 import { EmptyState } from '../../../components/ui/States';
 import { useToast } from '../../../context/ToastContext';
 import GesNav from './GesNav';
-import { PROVEEDORES, agregarConvenioCatalogo, toggleConvenioCatalogo } from './gesData';
+import { PROVEEDORES, agregarConvenioCatalogo, agregarProducto, getProductos, toggleConvenioCatalogo, toggleProducto } from './gesData';
 
 // Catálogo maestro de convenios de BEET (sección 9): GES lo crea y
 // mantiene aquí; las cooperativas solo pueden seleccionar de esta lista
@@ -23,6 +23,11 @@ export default function ConveniosCatalogo() {
   const [nombre, setNombre] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [productosConvenio, setProductosConvenio] = useState(null);
+  const [nuevoProducto, setNuevoProducto] = useState('');
+  const [productoError, setProductoError] = useState('');
+  const [savingProducto, setSavingProducto] = useState(false);
 
   // PROVEEDORES se muta in-place (push), nunca se reasigna — leerlo
   // directamente en cada render ya refleja los convenios agregados; solo
@@ -59,6 +64,39 @@ export default function ConveniosCatalogo() {
     setVersion((v) => v + 1);
   };
 
+  const abrirProductos = (convenio) => {
+    setProductosConvenio(convenio);
+    setNuevoProducto('');
+    setProductoError('');
+  };
+
+  const cerrarProductos = () => {
+    if (savingProducto) return;
+    setProductosConvenio(null);
+  };
+
+  const handleToggleProducto = (producto) => {
+    toggleProducto(producto.id);
+    push({ title: producto.estado ? 'Producto desactivado' : 'Producto activado', description: `${producto.nombre} · ${productosConvenio.nombre}` });
+    setVersion((v) => v + 1);
+  };
+
+  const handleAgregarProducto = (e) => {
+    e.preventDefault();
+    setSavingProducto(true);
+    try {
+      const nuevo = agregarProducto({ proveedorId: productosConvenio.id, nombre: nuevoProducto });
+      push({ title: 'Producto agregado', description: `${nuevo.nombre} · ${productosConvenio.nombre}` });
+      setNuevoProducto('');
+      setProductoError('');
+      setVersion((v) => v + 1);
+    } catch (err) {
+      setProductoError(err.message);
+    } finally {
+      setSavingProducto(false);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -83,6 +121,7 @@ export default function ConveniosCatalogo() {
                 <tr>
                   <th>Convenio</th>
                   <th>Estado</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -91,6 +130,9 @@ export default function ConveniosCatalogo() {
                     <td className="cell-primary">{p.nombre}</td>
                     <td>
                       <Switch label={p.estado ? 'Activo' : 'Inactivo'} checked={p.estado} onChange={() => handleToggle(p)} />
+                    </td>
+                    <td className="right">
+                      <Button size="sm" variant="secondary" onClick={() => abrirProductos(p)}>Ver productos</Button>
                     </td>
                   </tr>
                 ))}
@@ -116,6 +158,50 @@ export default function ConveniosCatalogo() {
             <Input value={nombre} onChange={(e) => { setNombre(e.target.value); setError(''); }} placeholder="Ej: Museo Nacional" />
           </Field>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!productosConvenio}
+        onClose={cerrarProductos}
+        title={productosConvenio ? `Productos · ${productosConvenio.nombre}` : ''}
+        actions={<Button variant="secondary" onClick={cerrarProductos}>Cerrar</Button>}
+      >
+        {productosConvenio && (
+          <div>
+            {getProductos(productosConvenio.id).length === 0 ? (
+              <EmptyState title="Sin productos" description="Agrega el primer producto de este convenio." />
+            ) : (
+              <div className="table-scroll" style={{ marginBottom: 16 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getProductos(productosConvenio.id).map((prod) => (
+                      <tr key={prod.id}>
+                        <td className="cell-primary">{prod.nombre}</td>
+                        <td>
+                          <Switch label={prod.estado ? 'Activo' : 'Inactivo'} checked={prod.estado} onChange={() => handleToggleProducto(prod)} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <form onSubmit={handleAgregarProducto} style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+              <div style={{ flex: 1 }}>
+                <Field label="Nuevo producto" error={productoError}>
+                  <Input value={nuevoProducto} onChange={(e) => { setNuevoProducto(e.target.value); setProductoError(''); }} placeholder="Ej: Entrada 2D" />
+                </Field>
+              </div>
+              <Button type="submit" loading={savingProducto}>Agregar</Button>
+            </form>
+          </div>
+        )}
       </Modal>
     </div>
   );

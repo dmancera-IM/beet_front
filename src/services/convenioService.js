@@ -7,6 +7,19 @@ export function listarConvenios({ page = 1, pageSize = 20, sortBy, estado } = {}
   return apiClient.get(`/api/convenios?${params.toString()}`, { tokenAudience: "admin" });
 }
 
+// Catálogo maestro de convenios publicado por GES (id/nombre) — usado por
+// "Agregar convenio" para elegir de esta lista, nunca escribir un nombre
+// nuevo (sección 9/11 de FRONTEND_DB_ALIGNMENT.md).
+export function listarCatalogoMaestroConvenios() {
+  return apiClient.get("/api/convenios/catalogo-maestro", { tokenAudience: "admin", skipCooperativaScope: true });
+}
+
+// Productos (productos_convenio) que el catálogo maestro de GES tiene
+// registrados para un convenio — un convenio puede tener varios.
+export function listarProductosDeConvenio(idConvenio) {
+  return apiClient.get(`/api/convenios/productos?id_convenio=${encodeURIComponent(idConvenio)}`, { tokenAudience: "admin", skipCooperativaScope: true });
+}
+
 export function obtenerCatalogoAfiliado() {
   return apiClient.get("/api/convenios/catalogo", { tokenAudience: "afiliado" });
 }

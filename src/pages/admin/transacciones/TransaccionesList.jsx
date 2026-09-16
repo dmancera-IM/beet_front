@@ -25,7 +25,7 @@ export default function TransaccionesList() {
 
   const [transacciones, setTransacciones] = useState([]);
   const [afiliadosPorId, setAfiliadosPorId] = useState({});
-  const [conveniosPorId, setConveniosPorId] = useState({});
+  const [productosPorId, setProductosPorId] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -41,7 +41,18 @@ export default function TransaccionesList() {
       .then(([trxData, afiliadosData, conveniosData]) => {
         setTransacciones(trxData.items);
         setAfiliadosPorId(Object.fromEntries(afiliadosData.items.map((a) => [a.id, a])));
-        setConveniosPorId(Object.fromEntries(conveniosData.items.map((c) => [c.id, c])));
+        // Las transacciones ahora referencian un PRODUCTO (id_producto), no
+        // un convenio (un convenio puede tener varios productos, sección
+        // 7) — se arma un mapa producto_id -> {nombre, convenio} a partir
+        // de los productos de cada convenio de esta cooperativa.
+        return Promise.all(
+          conveniosData.items.map((c) =>
+            convenioService
+              .listarProductosDeConvenio(c.id_convenio)
+              .then((productos) => productos.map((p) => [p.id, { ...p, convenioNombre: c.nombre, convenio: c }]))
+              .catch(() => [])
+          )
+        ).then((grupos) => setProductosPorId(Object.fromEntries(grupos.flat())));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No pudimos cargar las transacciones.'))
       .finally(() => setLoading(false));
@@ -53,18 +64,18 @@ export default function TransaccionesList() {
     () =>
       transacciones.map((t) => {
         const afiliado = afiliadosPorId[t.afiliado_id];
-        const convenio = conveniosPorId[t.convenio_id];
+        const producto = productosPorId[t.id_producto];
         return {
           ...t,
           afiliadoNombre: afiliado ? `${afiliado.nombres} ${afiliado.apellidos}` : undefined,
           afiliadoDocumento: afiliado?.documento,
-          convenioNombre: convenio?.nombre,
+          convenioNombre: producto ? `${producto.convenioNombre} · ${producto.nombre}` : undefined,
         };
       }),
-    [transacciones, afiliadosPorId, conveniosPorId]
+    [transacciones, afiliadosPorId, productosPorId]
   );
 
-  const convenios = Object.values(conveniosPorId);
+  const productos = Object.entries(productosPorId).map(([id, p]) => ({ id, ...p }));
 
   const { search, setSearch, filters, setFilter, pageRows, page, setPage, totalPages, total } = useTableState({
     data: rows,
@@ -108,9 +119,9 @@ export default function TransaccionesList() {
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
               <Input placeholder="Buscar por afiliado, convenio o ID" value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
-            <Select style={{ width: 170 }} value={filters.convenio_id ?? ''} onChange={(e) => setFilter('convenio_id', e.target.value)}>
+            <Select style={{ width: 170 }} value={filters.id_producto ?? ''} onChange={(e) => setFilter('id_producto', e.target.value)}>
               <option value="">Todo convenio</option>
-              {convenios.map((c) => <option key={c.id} value={c.id}>{c.nombre}{!c.estado ? ' (inactivo)' : ''}</option>)}
+              {productos.map((p) => <option key={p.id} value={p.id}>{p.convenioNombre} · {p.nombre}{!p.convenio.estado ? ' (inactivo)' : ''}</option>)}
             </Select>
             <Select style={{ width: 150 }} value={filters.metodo_pago ?? ''} onChange={(e) => setFilter('metodo_pago', e.target.value)}>
               <option value="">Todo pago</option>
@@ -120,9 +131,6 @@ export default function TransaccionesList() {
             <Select style={{ width: 150 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
               <option value="">Todo estado</option>
               <option value="PENDIENTE">Pendiente</option>
-              <option value="APROBADA">Aprobada</option>
-              <option value="RECHAZADA">Rechazada</option>
-              <option value="CANCELADA">Cancelada</option>
               <option value="COMPLETADA">Completada</option>
             </Select>
           </div>

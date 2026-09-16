@@ -10,7 +10,7 @@ import { EmptyState } from '../../../components/ui/States';
 import { useTableState } from '../../../hooks/useTableState';
 import { useToast } from '../../../context/ToastContext';
 import GesNav from './GesNav';
-import { getAsignacionesPorProveedor, getInventarioCentral, getProveedores } from './gesData';
+import { getAsignacionesPorProveedor, getInventarioCentral, getProductos, getProveedores } from './gesData';
 
 // STORAGE: el almacenamiento central de GES — qué bonos/boletas tiene
 // disponibles para asignar a las cooperativas, y cuánto ya asignó. Distinto
@@ -25,14 +25,17 @@ export default function Storage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [proveedorId, setProveedorId] = useState('');
+  const [productoId, setProductoId] = useState('');
   const [xmlFile, setXmlFile] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const { search, setSearch, pageRows, total } = useTableState({
     data: storage,
-    searchFields: ['proveedor'],
+    searchFields: ['proveedor', 'producto'],
     pageSize: 50,
   });
+
+  const productosDelConvenio = getProductos(proveedorId);
 
   const totalDisponible = storage.reduce((s, i) => s + i.disponible, 0);
   const totalAsignado = storage.reduce((s, i) => s + i.asignado, 0);
@@ -41,13 +44,21 @@ export default function Storage() {
     if (saving) return;
     setFormOpen(false);
     setProveedorId('');
+    setProductoId('');
     setXmlFile(null);
   };
 
   const abrirForm = () => {
-    setProveedorId(getProveedores()[0]?.id ?? '');
+    const primerProveedor = getProveedores()[0]?.id ?? '';
+    setProveedorId(primerProveedor);
+    setProductoId(getProductos(primerProveedor)[0]?.id ?? '');
     setXmlFile(null);
     setFormOpen(true);
+  };
+
+  const handleProveedorChange = (id) => {
+    setProveedorId(id);
+    setProductoId(getProductos(id)[0]?.id ?? '');
   };
 
   const handleFile = (file) => {
@@ -64,11 +75,12 @@ export default function Storage() {
   // adelante estos archivos con la información real de bonos/boletas.
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!proveedorId || !xmlFile) return;
+    if (!proveedorId || !productoId || !xmlFile) return;
     const nombreConvenio = getProveedores().find((p) => p.id === proveedorId)?.nombre ?? '';
+    const nombreProducto = productosDelConvenio.find((p) => p.id === Number(productoId))?.nombre ?? '';
     setSaving(true);
     setTimeout(() => {
-      push({ title: 'XML cargado', description: `${xmlFile.name} se procesó correctamente para ${nombreConvenio} (simulación).` });
+      push({ title: 'XML cargado', description: `${xmlFile.name} se procesó correctamente para ${nombreConvenio} · ${nombreProducto} (simulación).` });
       setSaving(false);
       cerrarForm();
     }, 600);
@@ -116,6 +128,7 @@ export default function Storage() {
               <thead>
                 <tr>
                   <th>Convenio</th>
+                  <th>Producto</th>
                   <th className="right">Disponibles</th>
                   <th className="right">Asignados</th>
                   <th className="right">Total</th>
@@ -124,8 +137,9 @@ export default function Storage() {
               </thead>
               <tbody>
                 {pageRows.map((i) => (
-                  <tr key={i.proveedorId}>
+                  <tr key={i.productoId}>
                     <td className="cell-primary">{i.proveedor}</td>
+                    <td>{i.producto}</td>
                     <td className="right tabular">{i.disponible.toLocaleString('es-CO')}</td>
                     <td className="right tabular">{i.asignado.toLocaleString('es-CO')}</td>
                     <td className="right tabular">{i.total.toLocaleString('es-CO')}</td>
@@ -141,7 +155,7 @@ export default function Storage() {
       <Modal
         open={!!detalle}
         onClose={() => setDetalle(null)}
-        title={detalle ? `Storage · ${detalle.proveedor}` : ''}
+        title={detalle ? `Storage · ${detalle.proveedor} · ${detalle.producto}` : ''}
         actions={<Button variant="secondary" onClick={() => setDetalle(null)}>Cerrar</Button>}
       >
         {detalle && (
@@ -166,8 +180,8 @@ export default function Storage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {getAsignacionesPorProveedor(detalle.proveedorId).map((a) => (
-                  <div key={a.cooperativaId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                    <span>{a.cooperativaNombre}</span>
+                  <div key={`${a.cooperativaId}-${a.productoId}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                    <span>{a.cooperativaNombre} <span className="cell-muted">· {a.productoNombre}</span></span>
                     <span className="tabular">{a.cantidad.toLocaleString('es-CO')}</span>
                   </div>
                 ))}
@@ -184,7 +198,7 @@ export default function Storage() {
         actions={
           <>
             <Button variant="secondary" onClick={cerrarForm} disabled={saving}>Cancelar</Button>
-            <Button onClick={handleSubmit} loading={saving} disabled={!proveedorId || !xmlFile}>Cargar XML</Button>
+            <Button onClick={handleSubmit} loading={saving} disabled={!proveedorId || !productoId || !xmlFile}>Cargar XML</Button>
           </>
         }
       >
@@ -193,10 +207,21 @@ export default function Storage() {
           los bonos/boletas. Por ahora esta carga es solo una simulación visual — no se procesa el contenido.
         </p>
         <Field label="Convenio">
-          <Select value={proveedorId} onChange={(e) => setProveedorId(e.target.value)}>
+          <Select value={proveedorId} onChange={(e) => handleProveedorChange(e.target.value)}>
             {getProveedores().map((p) => (
               <option key={p.id} value={p.id}>{p.nombre}</option>
             ))}
+          </Select>
+        </Field>
+        <Field label="Producto">
+          <Select value={productoId} onChange={(e) => setProductoId(e.target.value)} disabled={productosDelConvenio.length === 0}>
+            {productosDelConvenio.length === 0 ? (
+              <option value="">Sin productos para este convenio</option>
+            ) : (
+              productosDelConvenio.map((p) => (
+                <option key={p.id} value={p.id}>{p.nombre}</option>
+              ))
+            )}
           </Select>
         </Field>
         {!xmlFile ? (

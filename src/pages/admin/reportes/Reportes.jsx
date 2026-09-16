@@ -141,9 +141,6 @@ export default function Reportes() {
           <Select style={{ width: 150 }} value={filtros.estado} onChange={(e) => setFiltros((f) => ({ ...f, estado: e.target.value }))}>
             <option value="">Todo estado</option>
             <option value="PENDIENTE">Pendiente</option>
-            <option value="APROBADA">Aprobada</option>
-            <option value="RECHAZADA">Rechazada</option>
-            <option value="CANCELADA">Cancelada</option>
             <option value="COMPLETADA">Completada</option>
           </Select>
         </div>

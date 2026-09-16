@@ -30,11 +30,30 @@ export default function InventarioGeneral() {
       .listarConvenios({ pageSize: 100 })
       .then((data) => {
         setConvenios(data.items);
+        // Un convenio puede tener varios productos (sección 7) y el
+        // inventario se identifica por producto — se suma DISPONIBLE/
+        // ENTREGADA/VENCIDA/BLOQUEADA de todos los productos de cada
+        // convenio para mostrar un solo resumen agregado por fila.
         return Promise.all(
           data.items.map((c) =>
-            inventarioService
-              .resumenInventario(c.id)
-              .then((r) => [c.id, r])
+            convenioService
+              .listarProductosDeConvenio(c.id_convenio)
+              .then((productos) => Promise.all(productos.map((p) => inventarioService.resumenInventario(p.id).catch(() => null))))
+              .then((resumenes) => {
+                if (resumenes.length === 0) return [c.id, null];
+                return [
+                  c.id,
+                  resumenes.reduce(
+                    (acc, r) => ({
+                      disponible: acc.disponible + (r?.disponible ?? 0),
+                      entregada: acc.entregada + (r?.entregada ?? 0),
+                      vencida: acc.vencida + (r?.vencida ?? 0),
+                      bloqueada: acc.bloqueada + (r?.bloqueada ?? 0),
+                    }),
+                    { disponible: 0, entregada: 0, vencida: 0, bloqueada: 0 }
+                  ),
+                ];
+              })
               .catch(() => [c.id, null])
           )
         );
@@ -65,9 +84,9 @@ export default function InventarioGeneral() {
       disponible: acc.disponible + (r?.disponible ?? 0),
       entregada: acc.entregada + (r?.entregada ?? 0),
       vencida: acc.vencida + (r?.vencida ?? 0),
-      cancelada: acc.cancelada + (r?.cancelada ?? 0),
+      bloqueada: acc.bloqueada + (r?.bloqueada ?? 0),
     }),
-    { disponible: 0, entregada: 0, vencida: 0, cancelada: 0 }
+    { disponible: 0, entregada: 0, vencida: 0, bloqueada: 0 }
   );
 
   return (
@@ -83,7 +102,7 @@ export default function InventarioGeneral() {
         <KpiCard label="Disponible" value={totales.disponible} deltaTone="neutral" delta="Unidades listas para venta" />
         <KpiCard label="Entregada" value={totales.entregada} deltaTone="neutral" delta="Asignadas a afiliados" />
         <KpiCard label="Vencidas" value={totales.vencida} deltaTone="warning" delta="Sin redimir, fuera de vigencia" icon={<IconWarningTriangle size={14} color="var(--warning)" />} />
-        <KpiCard label="Canceladas" value={totales.cancelada} deltaTone="neutral" delta="Códigos anulados" />
+        <KpiCard label="Bloqueadas" value={totales.bloqueada} deltaTone="neutral" delta="Códigos bloqueados" />
       </div>
 
       {convenios.length === 0 ? (
@@ -98,7 +117,7 @@ export default function InventarioGeneral() {
                   <th className="right">Disponible</th>
                   <th className="right">Entregada</th>
                   <th className="right">Vencida</th>
-                  <th className="right">Cancelada</th>
+                  <th className="right">Bloqueada</th>
                   <th></th>
                 </tr>
               </thead>
@@ -116,7 +135,7 @@ export default function InventarioGeneral() {
                       <td className="right">
                         {inv?.vencida > 0 ? <Badge tone="amber">{inv.vencida}</Badge> : <span className="tabular">{inv?.vencida ?? 0}</span>}
                       </td>
-                      <td className="right tabular">{inv?.cancelada ?? '—'}</td>
+                      <td className="right tabular">{inv?.bloqueada ?? '—'}</td>
                       <td className="right"><Link to={`${base}/inventario/${c.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver detalle</Link></td>
                     </tr>
                   );

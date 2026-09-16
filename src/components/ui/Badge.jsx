@@ -30,22 +30,19 @@ const STATUS_MAP = {
   retirado: { tone: 'neutral', dot: true, label: 'Retirado' },
   suspendido: { tone: 'amber', label: 'Suspendido' },
   inactivo: { tone: 'neutral', dot: true, label: 'Inactivo' },
-  // Real backend inventory states (app/models/enums.py::EstadoUnidadInventario)
-  // — lowercase, distinct from the capitalized mock labels above.
-  disponible: { tone: 'green', dot: true, label: 'Disponible' },
-  bloqueada: { tone: 'amber', label: 'Bloqueada' },
-  entregada: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Entregada' },
-  redimida: { tone: 'neutral', dot: true, label: 'Redimida' },
-  cancelada: { tone: 'red', icon: <IconClose color="var(--error)" />, label: 'Cancelada' },
-  vencida: { tone: 'vencido', label: 'Vencida' },
-  // Real backend transaction states (app/models/enums.py::EstadoTransaccion)
-  // — uppercase, matching the real database's CHECK constraint exactly.
-  // Includes CANCELADA at the transaction level (in addition to unit-level
-  // cancellation), unlike an earlier design assumption.
+  // unidades_inventario.estado (sección 12 del modelo) — solo estos tres
+  // existen; BEET no controla la redención del bono, así que no hay un
+  // estado "utilizado/redimida" (sección 13). BLOQUEADA es un control
+  // operativo del inventario de la cooperativa (bloquear/desbloquear), no
+  // parte de las 9 tablas canónicas, pero tampoco lo prohíbe el modelo.
+  DISPONIBLE: { tone: 'green', dot: true, label: 'Disponible' },
+  ENTREGADA: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Entregada' },
+  VENCIDA: { tone: 'vencido', label: 'Vencida' },
+  BLOQUEADA: { tone: 'amber', label: 'Bloqueada' },
+  ASIGNADO: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Asignado' },
+  // transacciones.estado (sección 11) — únicamente estos dos: no hay
+  // aprobar/rechazar manual.
   PENDIENTE: { tone: 'blue', spinner: true, label: 'Pendiente' },
-  APROBADA: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Aprobada' },
-  RECHAZADA: { tone: 'red', icon: <IconClose color="var(--error)" />, label: 'Rechazada' },
-  CANCELADA: { tone: 'red', icon: <IconClose color="var(--error)" />, label: 'Cancelada' },
   COMPLETADA: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Completada' },
   // documentos_asuncion_deuda.estado
   FIRMADO: { tone: 'green', dot: true, label: 'Firmado' },

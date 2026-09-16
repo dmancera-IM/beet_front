@@ -84,11 +84,12 @@ export default function CooperativaDetail() {
             ) : (
               <div className="table-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Convenio</th><th className="right">Disponibles</th><th className="right">Vendidas</th></tr></thead>
+                  <thead><tr><th>Convenio</th><th>Producto</th><th className="right">Disponibles</th><th className="right">Vendidas</th></tr></thead>
                   <tbody>
                     {asignaciones.map((a) => (
-                      <tr key={a.proveedorId}>
+                      <tr key={`${a.proveedorId}-${a.productoNombre}`}>
                         <td className="cell-primary">{a.proveedorNombre}</td>
+                        <td>{a.productoNombre}</td>
                         <td className="right tabular">{a.disponibles.toLocaleString('es-CO')}</td>
                         <td className="right tabular">{a.vendidas.toLocaleString('es-CO')}</td>
                       </tr>
@@ -108,11 +109,12 @@ export default function CooperativaDetail() {
               ) : (
                 <div className="table-scroll">
                   <table className="data-table">
-                    <thead><tr><th>Convenio</th><th className="right">Cantidad asignada</th></tr></thead>
+                    <thead><tr><th>Convenio</th><th>Producto</th><th className="right">Cantidad asignada</th></tr></thead>
                     <tbody>
                       {asignaciones.map((a) => (
-                        <tr key={a.proveedorId}>
+                        <tr key={`${a.proveedorId}-${a.productoNombre}`}>
                           <td className="cell-primary">{a.proveedorNombre}</td>
+                          <td>{a.productoNombre}</td>
                           <td className="right tabular">{a.cantidad.toLocaleString('es-CO')}</td>
                         </tr>
                       ))}

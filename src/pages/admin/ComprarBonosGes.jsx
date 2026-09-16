@@ -6,7 +6,7 @@ import Button from '../../components/ui/Button';
 import Alert from '../../components/ui/Alert';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { PROVEEDORES, crearSolicitudDesdeCooperativa } from './ges/gesData';
+import { PROVEEDORES, crearSolicitudDesdeCooperativa, getProductos } from './ges/gesData';
 
 // Vista GES DENTRO del panel del administrador de cooperativa — NO es el
 // panel completo de GES (eso vive en /ges, solo para GES y Súper admin).
@@ -19,10 +19,19 @@ export default function ComprarBonosGes() {
   const { push } = useToast();
 
   const [proveedorId, setProveedorId] = useState(PROVEEDORES[0]?.id ?? '');
+  const [productoId, setProductoId] = useState(getProductos(PROVEEDORES[0]?.id ?? '')[0]?.id ?? '');
   const [cantidad, setCantidad] = useState('');
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [ultimaSolicitud, setUltimaSolicitud] = useState(null);
+
+  const productosDelConvenio = getProductos(proveedorId);
+
+  const handleProveedorChange = (id) => {
+    setProveedorId(id);
+    setProductoId(getProductos(id)[0]?.id ?? '');
+    setError('');
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -32,18 +41,23 @@ export default function ComprarBonosGes() {
       setError('La cantidad debe ser mayor a 0.');
       return;
     }
+    if (!productoId) {
+      setError('Selecciona un producto.');
+      return;
+    }
     setEnviando(true);
     try {
       const solicitud = crearSolicitudDesdeCooperativa({
         cooperativaId,
-        proveedorId,
+        productoId,
         cantidad: n,
         administrador: currentUser.nombre,
         formaPago: 'Cupo',
       });
       setUltimaSolicitud(solicitud);
       setCantidad('');
-      push({ title: 'Solicitud enviada a GES', description: `${n.toLocaleString('es-CO')} unidades de ${PROVEEDORES.find((p) => p.id === proveedorId)?.nombre}.` });
+      const nombreProducto = productosDelConvenio.find((p) => p.id === Number(productoId))?.nombre;
+      push({ title: 'Solicitud enviada a GES', description: `${n.toLocaleString('es-CO')} unidades de ${PROVEEDORES.find((p) => p.id === proveedorId)?.nombre} · ${nombreProducto}.` });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -63,10 +77,21 @@ export default function ComprarBonosGes() {
       <Card padding="card-pad-lg" style={{ maxWidth: 480 }}>
         <form onSubmit={handleSubmit}>
           <Field label="Convenio">
-            <Select value={proveedorId} onChange={(e) => { setProveedorId(e.target.value); setError(''); }}>
+            <Select value={proveedorId} onChange={(e) => handleProveedorChange(e.target.value)}>
               {PROVEEDORES.map((p) => (
                 <option key={p.id} value={p.id}>{p.nombre}</option>
               ))}
+            </Select>
+          </Field>
+          <Field label="Producto">
+            <Select value={productoId} onChange={(e) => { setProductoId(e.target.value); setError(''); }} disabled={productosDelConvenio.length === 0}>
+              {productosDelConvenio.length === 0 ? (
+                <option value="">Sin productos para este convenio</option>
+              ) : (
+                productosDelConvenio.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))
+              )}
             </Select>
           </Field>
           <Field label="Cantidad" error={error}>

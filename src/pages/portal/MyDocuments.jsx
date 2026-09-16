@@ -30,7 +30,7 @@ export default function MyDocuments() {
           data.items.map((d) =>
             transaccionesService
               .miTransaccion(d.transaccion_id)
-              .then((trx) => [d.id, catalogoPorId[trx.convenio_id] ?? null])
+              .then((trx) => [d.id, catalogoPorId[trx.id_producto] ?? null])
               .catch(() => [d.id, null])
           )
         );

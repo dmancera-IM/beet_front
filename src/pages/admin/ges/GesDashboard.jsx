@@ -49,7 +49,7 @@ export default function GesDashboard() {
       <div className="grid detail-grid-2col" style={{ '--col-ratio': '1.3fr 1fr', gap: 16 }}>
         <Card padding="card-pad">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-            <span className="text-label" style={{ marginBottom: 0 }}>Storage por proveedor</span>
+            <span className="text-label" style={{ marginBottom: 0 }}>Storage por producto</span>
             <Link to="/ges/storage" className="text-small" style={{ fontWeight: 600 }}>Ver Storage</Link>
           </div>
           <div className="table-scroll">
@@ -57,6 +57,7 @@ export default function GesDashboard() {
               <thead>
                 <tr>
                   <th>Convenio</th>
+                  <th>Producto</th>
                   <th className="right">Disponible</th>
                   <th className="right">Asignado</th>
                   <th className="right">Total</th>
@@ -64,8 +65,9 @@ export default function GesDashboard() {
               </thead>
               <tbody>
                 {inventario.map((i) => (
-                  <tr key={i.proveedorId}>
+                  <tr key={i.productoId}>
                     <td className="cell-primary">{i.proveedor}</td>
+                    <td>{i.producto}</td>
                     <td className="right tabular">{i.disponible.toLocaleString('es-CO')}</td>
                     <td className="right tabular">{i.asignado.toLocaleString('es-CO')}</td>
                     <td className="right tabular">{i.total.toLocaleString('es-CO')}</td>
@@ -89,7 +91,7 @@ export default function GesDashboard() {
                 <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500 }}>{s.cooperativaNombre}</div>
-                    <div className="text-caption">{s.proveedorNombre} · {s.cantidad.toLocaleString('es-CO')} unidades · {formatDate(s.fecha)}</div>
+                    <div className="text-caption">{s.proveedorNombre} · {s.productoNombre} · {s.cantidad.toLocaleString('es-CO')} unidades · {formatDate(s.fecha)}</div>
                   </div>
                   <StatusBadge status={s.estado} />
                 </div>

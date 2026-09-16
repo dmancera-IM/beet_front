@@ -22,7 +22,7 @@ export default function TicketDetail() {
       .then(([tickets, convenios]) => {
         const found = tickets.find((t) => String(t.id) === id) ?? null;
         setTicket(found);
-        if (found) setConvenio(convenios.find((c) => c.id === found.convenio_id) ?? null);
+        if (found) setConvenio(convenios.find((c) => c.id === found.id_producto) ?? null);
       })
       .catch((err) => setError(err.message));
   }, [id]);
@@ -61,7 +61,8 @@ export default function TicketDetail() {
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 14 }}>Detalle del beneficio</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-            <Row label="Convenio" value={convenio?.nombre} />
+            <Row label="Convenio" value={convenio?.convenio_nombre} />
+            <Row label="Producto" value={convenio?.nombre} />
             <Row label="Descripción" value={convenio?.descripcion} />
           </div>
           <Button variant="secondary" onClick={descargar}>Descargar</Button>

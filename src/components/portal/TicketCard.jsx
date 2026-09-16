@@ -13,6 +13,7 @@ export default function TicketCard({ ticket, convenio, linkToDetail = true }) {
       <div className="ticket-card-notch ticket-card-notch-right" />
       <div className="ticket-card-header">
         <div>
+          {convenio?.convenio_nombre && <div className="text-caption">{convenio.convenio_nombre}</div>}
           <div style={{ fontSize: 15, fontWeight: 600 }}>{convenio?.nombre ?? '—'}</div>
         </div>
         <StatusBadge status={ticket.estado} />

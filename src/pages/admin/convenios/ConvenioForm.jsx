@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card } from '../../../components/ui/Card';
-import { Field, Input, Textarea, Switch } from '../../../components/ui/Field';
+import { Field, Input, Select, Textarea, Switch } from '../../../components/ui/Field';
 import Button from '../../../components/ui/Button';
 import Alert from '../../../components/ui/Alert';
 import { LoadingState } from '../../../components/ui/States';
@@ -17,11 +17,15 @@ import { useAreaBase } from '../../../hooks/useAreaBase';
 // has no `marca`, `categoria`, `tope`, or `tope_periodicidad` columns —
 // this form only edits what the real schema actually stores (see
 // SCHEMA_NOTES.md): nombre, descripcion, precios, fecha_inicio/fecha_fin,
-// estado.
+// estado. Creating a row means activating one convenio from GES's master
+// catalog for this cooperativa, so `nombre`/`id_convenio` are only chosen
+// on create (via a Select fed by the master catalog) and are read-only on
+// edit — see FRONTEND_DB_ALIGNMENT.md.
 const emptyForm = {
+  id_convenio: '',
   nombre: '',
   descripcion: '',
-  precio_publico: '',
+  precio_normal: '',
   precio_beet: '',
   fecha_inicio: '',
   fecha_fin: '',
@@ -40,6 +44,8 @@ export default function ConvenioForm() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [nombreConvenio, setNombreConvenio] = useState('');
+  const [catalogoMaestro, setCatalogoMaestro] = useState([]);
+  const [loadingCatalogo, setLoadingCatalogo] = useState(!isEdit);
 
   useSetBreadcrumbs([
     { label: 'Convenios', to: `${base}/convenios` },
@@ -47,14 +53,27 @@ export default function ConvenioForm() {
   ]);
 
   useEffect(() => {
+    if (isEdit) return;
+    convenioService
+      .listarCatalogoMaestroConvenios()
+      .then((catalogo) => {
+        setCatalogoMaestro(catalogo);
+        setForm((f) => ({ ...f, id_convenio: f.id_convenio || catalogo[0]?.id || '' }));
+      })
+      .catch((err) => push({ title: 'No se pudo cargar el catálogo maestro', description: err.message, variant: 'error' }))
+      .finally(() => setLoadingCatalogo(false));
+  }, [isEdit, push]);
+
+  useEffect(() => {
     if (!isEdit) return;
     convenioService
       .obtenerConvenio(id)
       .then((c) => {
         setForm({
+          id_convenio: c.id_convenio,
           nombre: c.nombre,
           descripcion: c.descripcion ?? '',
-          precio_publico: String(c.precio_publico),
+          precio_normal: String(c.precio_normal),
           precio_beet: String(c.precio_beet),
           fecha_inicio: c.fecha_inicio,
           fecha_fin: c.fecha_fin ?? '',
@@ -68,16 +87,22 @@ export default function ConvenioForm() {
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  const ahorro = form.precio_publico && form.precio_beet ? Number(form.precio_publico) - Number(form.precio_beet) : null;
-  const ahorroPct = ahorro && form.precio_publico ? Math.round((ahorro / Number(form.precio_publico)) * 100) : null;
+  const handleSelectConvenio = (e) => {
+    const idConvenio = e.target.value;
+    const nombre = catalogoMaestro.find((c) => c.id === idConvenio)?.nombre ?? '';
+    setForm((f) => ({ ...f, id_convenio: idConvenio, nombre }));
+  };
+
+  const ahorro = form.precio_normal && form.precio_beet ? Number(form.precio_normal) - Number(form.precio_beet) : null;
+  const ahorroPct = ahorro && form.precio_normal ? Math.round((ahorro / Number(form.precio_normal)) * 100) : null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const nextErrors = {};
-    if (!form.nombre.trim()) nextErrors.nombre = 'El nombre del convenio es obligatorio.';
-    if (!form.precio_publico) nextErrors.precio_publico = 'Ingresa el precio público.';
+    if (!isEdit && !form.id_convenio) nextErrors.id_convenio = 'Selecciona un convenio del catálogo maestro.';
+    if (!form.precio_normal) nextErrors.precio_normal = 'Ingresa el precio público.';
     if (!form.precio_beet) nextErrors.precio_beet = 'Ingresa el precio BEET.';
-    if (Number(form.precio_beet) > Number(form.precio_publico) && form.precio_publico && form.precio_beet) {
+    if (Number(form.precio_beet) > Number(form.precio_normal) && form.precio_normal && form.precio_beet) {
       nextErrors.precio_beet = 'El precio BEET no puede ser mayor al precio público.';
     }
     if (!form.fecha_inicio) nextErrors.fecha_inicio = 'Define la fecha de inicio.';
@@ -87,15 +112,25 @@ export default function ConvenioForm() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
-    const payload = {
-      nombre: form.nombre.trim(),
-      descripcion: form.descripcion.trim() || null,
-      precio_publico: Number(form.precio_publico),
-      precio_beet: Number(form.precio_beet),
-      fecha_inicio: form.fecha_inicio,
-      fecha_fin: form.fecha_fin || null,
-      estado: form.activo,
-    };
+    const payload = isEdit
+      ? {
+          descripcion: form.descripcion.trim() || null,
+          precio_normal: Number(form.precio_normal),
+          precio_beet: Number(form.precio_beet),
+          fecha_inicio: form.fecha_inicio,
+          fecha_fin: form.fecha_fin || null,
+          estado: form.activo,
+        }
+      : {
+          id_convenio: form.id_convenio,
+          nombre: form.nombre,
+          descripcion: form.descripcion.trim() || null,
+          precio_normal: Number(form.precio_normal),
+          precio_beet: Number(form.precio_beet),
+          fecha_inicio: form.fecha_inicio,
+          fecha_fin: form.fecha_fin || null,
+          estado: form.activo,
+        };
 
     setSaving(true);
     try {
@@ -104,7 +139,7 @@ export default function ConvenioForm() {
       } else {
         await convenioService.crearConvenio(payload);
       }
-      push({ title: isEdit ? 'Convenio actualizado' : 'Convenio creado', description: `${payload.nombre} se guardó en PostgreSQL.` });
+      push({ title: isEdit ? 'Convenio actualizado' : 'Convenio creado', description: `${form.nombre || payload.nombre} se guardó en PostgreSQL.` });
       navigate(`${base}/convenios`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 422 && Array.isArray(err.detail)) {
@@ -117,7 +152,7 @@ export default function ConvenioForm() {
     }
   };
 
-  if (loading) return <LoadingState title="Cargando convenio…" />;
+  if (loading || loadingCatalogo) return <LoadingState title="Cargando convenio…" />;
 
   return (
     <RequireWriteAccess>
@@ -133,9 +168,20 @@ export default function ConvenioForm() {
           <Card padding="card-pad-lg" className="section-gap">
             <div className="grid grid-2">
               <div>
-                <Field label="Nombre del convenio" error={errors.nombre}>
-                  <Input value={form.nombre} onChange={set('nombre')} placeholder="Ej. Cine Colombia" />
-                </Field>
+                {isEdit ? (
+                  <Field label="Convenio" hint="El convenio del catálogo maestro no se puede cambiar una vez creado.">
+                    <Input value={form.nombre} disabled readOnly />
+                  </Field>
+                ) : (
+                  <Field label="Convenio del catálogo maestro" error={errors.id_convenio}>
+                    <Select value={form.id_convenio} onChange={handleSelectConvenio}>
+                      {catalogoMaestro.length === 0 && <option value="">No hay convenios disponibles</option>}
+                      {catalogoMaestro.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                )}
                 <Field label="Fecha de inicio" error={errors.fecha_inicio}>
                   <Input type="date" value={form.fecha_inicio} onChange={set('fecha_inicio')} />
                 </Field>
@@ -144,8 +190,8 @@ export default function ConvenioForm() {
                 </Field>
               </div>
               <div>
-                <Field label="Precio público" error={errors.precio_publico}>
-                  <Input type="number" min="0" value={form.precio_publico} onChange={set('precio_publico')} placeholder="38000" />
+                <Field label="Precio público" error={errors.precio_normal}>
+                  <Input type="number" min="0" value={form.precio_normal} onChange={set('precio_normal')} placeholder="38000" />
                 </Field>
                 <Field label="Precio BEET" error={errors.precio_beet} hint={ahorro ? `Ahorro para el afiliado: ${formatCOP(ahorro)} (${ahorroPct}%)` : undefined}>
                   <Input type="number" min="0" value={form.precio_beet} onChange={set('precio_beet')} placeholder="27500" />

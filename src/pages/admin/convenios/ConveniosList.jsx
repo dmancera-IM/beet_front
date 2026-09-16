@@ -21,7 +21,6 @@ import { useAuth } from '../../../context/AuthContext';
 import { useCooperativa } from '../../../context/CooperativaContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 import RequireCooperativaSeleccionada from '../../../components/layout/RequireCooperativaSeleccionada';
-import { PROVEEDORES } from '../ges/gesData';
 
 // NOTE: unlike an earlier design assumption, the real `convenios` table
 // has no `marca`, `categoria`, `tope`, or `tope_periodicidad` columns —
@@ -49,6 +48,8 @@ export default function ConveniosList() {
   const [catalogoOpen, setCatalogoOpen] = useState(false);
   const [seleccionCatalogo, setSeleccionCatalogo] = useState({});
   const [guardandoCatalogo, setGuardandoCatalogo] = useState(false);
+  const [catalogoMaestro, setCatalogoMaestro] = useState([]);
+  const [cargandoCatalogoMaestro, setCargandoCatalogoMaestro] = useState(false);
 
   const [modificarOpen, setModificarOpen] = useState(false);
   const [convenioAModificar, setConvenioAModificar] = useState('');
@@ -61,13 +62,23 @@ export default function ConveniosList() {
       .listarConvenios({ pageSize: 100 })
       .then((data) => {
         setConvenios(data.items);
-        // One summary call per convenio — fine at this dataset size for an
-        // integration test; a later pass could add an aggregate endpoint.
+        // A convenio (cooperativas_convenios row) can now have MULTIPLE
+        // productos (sección 7) — the "Inventario" column sums DISPONIBLE
+        // across all of a convenio's productos. One batch of calls per
+        // convenio row — fine at this dataset size for an integration
+        // test; a later pass could add an aggregate endpoint.
         Promise.all(
           data.items.map((c) =>
-            inventarioService
-              .resumenInventario(c.id)
-              .then((r) => [c.id, r])
+            convenioService
+              .listarProductosDeConvenio(c.id_convenio)
+              .then((productos) =>
+                productos.length === 0
+                  ? [c.id, null]
+                  : Promise.all(productos.map((p) => inventarioService.resumenInventario(p.id).catch(() => null))).then((resumenes) => [
+                      c.id,
+                      { disponible: resumenes.reduce((s, r) => s + (r?.disponible ?? 0), 0) },
+                    ])
+              )
               .catch(() => [c.id, null])
           )
         ).then((pairs) => setInventarioPorConvenio(Object.fromEntries(pairs)));
@@ -141,12 +152,18 @@ export default function ConveniosList() {
   // Catálogo maestro de convenios creado por GES (sección 9) — la
   // cooperativa solo puede elegir de esta lista, nunca escribir un nombre
   // nuevo directamente (ver sección 11).
-  const nombresYaAgregados = new Set(convenios.map((c) => c.nombre));
-  const catalogoDisponible = PROVEEDORES.filter((p) => !nombresYaAgregados.has(p.nombre));
+  const idsYaAgregados = new Set(convenios.map((c) => c.id_convenio));
+  const catalogoDisponible = catalogoMaestro.filter((p) => !idsYaAgregados.has(p.id));
 
   const abrirCatalogo = () => {
     setSeleccionCatalogo({});
     setCatalogoOpen(true);
+    setCargandoCatalogoMaestro(true);
+    convenioService
+      .listarCatalogoMaestroConvenios()
+      .then(setCatalogoMaestro)
+      .catch((err) => push({ title: 'No se pudo cargar el catálogo maestro', description: err.message, variant: 'error' }))
+      .finally(() => setCargandoCatalogoMaestro(false));
   };
 
   const confirmarAgregarConvenios = async () => {
@@ -158,9 +175,10 @@ export default function ConveniosList() {
       await Promise.all(
         seleccionados.map((p) =>
           convenioService.crearConvenio({
+            id_convenio: p.id,
             nombre: p.nombre,
             descripcion: null,
-            precio_publico: 0,
+            precio_normal: 0,
             precio_beet: 0,
             fecha_inicio: hoy,
             fecha_fin: null,
@@ -263,7 +281,7 @@ export default function ConveniosList() {
               </thead>
               <tbody>
                 {pageRows.map((c) => {
-                  const ahorroPct = c.precio_publico ? Math.round(((c.precio_publico - c.precio_beet) / c.precio_publico) * 100) : 0;
+                  const ahorroPct = c.precio_normal ? Math.round(((c.precio_normal - c.precio_beet) / c.precio_normal) * 100) : 0;
                   const inv = inventarioPorConvenio[c.id];
                   return (
                     <tr key={c.id}>
@@ -272,9 +290,9 @@ export default function ConveniosList() {
                         <div className="cell-muted">{c.descripcion ?? '—'}</div>
                       </td>
                       <td className="right tabular">{formatCOP(c.precio_beet)}</td>
-                      <td className="right tabular" style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}>{formatCOP(c.precio_publico)}</td>
+                      <td className="right tabular" style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}>{formatCOP(c.precio_normal)}</td>
                       <td className="right">
-                        <div className="tabular" style={{ fontWeight: 600 }}>{formatCOP(c.precio_publico - c.precio_beet)}</div>
+                        <div className="tabular" style={{ fontWeight: 600 }}>{formatCOP(c.precio_normal - c.precio_beet)}</div>
                         <Badge tone="green" dot>{ahorroPct}%</Badge>
                       </td>
                       <td className="text-small">{formatDate(c.fecha_inicio)}{c.fecha_fin ? ` – ${formatDate(c.fecha_fin)}` : ' – sin fin'}</td>
@@ -332,7 +350,7 @@ export default function ConveniosList() {
         title="Cargar convenios"
         actions={<Button variant="secondary" onClick={() => { setUploadOpen(false); setUploadResult(null); }} disabled={uploading}>Cerrar</Button>}
       >
-        <p style={{ marginTop: 0 }}>Archivo Excel o CSV con columnas: nombre, descripcion, precio_publico, precio_beet, fecha_inicio, fecha_fin, estado. Es un upsert: actualiza por nombre exacto si ya existe. Se envía a <code>POST /api/convenios/carga-masiva</code>.</p>
+        <p style={{ marginTop: 0 }}>Archivo Excel o CSV con columnas: nombre, descripcion, precio_normal, precio_beet, fecha_inicio, fecha_fin, estado. Es un upsert: actualiza por nombre exacto si ya existe. Se envía a <code>POST /api/convenios/carga-masiva</code>.</p>
         {isSuperAdmin && selected && (
           <p className="text-caption" style={{ marginTop: -8, marginBottom: 12 }}>Estás gestionando datos de: <strong>{selected.nombre}</strong></p>
         )}
@@ -375,7 +393,9 @@ export default function ConveniosList() {
         <p className="text-caption cell-muted" style={{ marginTop: 0 }}>
           Selecciona uno o varios convenios del catálogo maestro de GES. El precio y la vigencia se configuran después con “Modificar convenio”.
         </p>
-        {catalogoDisponible.length === 0 ? (
+        {cargandoCatalogoMaestro ? (
+          <LoadingState title="Cargando catálogo maestro…" />
+        ) : catalogoDisponible.length === 0 ? (
           <EmptyState title="Ya agregaste todos los convenios disponibles" description="GES todavía no ha publicado más convenios en el catálogo maestro." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

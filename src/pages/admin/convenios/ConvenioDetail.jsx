@@ -17,9 +17,7 @@ const ESTADOS_INVENTARIO = [
   { key: 'disponible', label: 'Disponible', tone: 'green' },
   { key: 'bloqueada', label: 'Bloqueada', tone: 'amber' },
   { key: 'entregada', label: 'Entregada', tone: 'blue' },
-  { key: 'redimida', label: 'Redimida', tone: 'neutral' },
   { key: 'vencida', label: 'Vencida', tone: 'neutral' },
-  { key: 'cancelada', label: 'Cancelada', tone: 'red' },
 ];
 
 export default function ConvenioDetail() {
@@ -31,6 +29,7 @@ export default function ConvenioDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [inv, setInv] = useState(null);
+  const [productos, setProductos] = useState([]);
   const [seleccionarOpen, setSeleccionarOpen] = useState(false);
   const [crearHtmlOpen, setCrearHtmlOpen] = useState(false);
 
@@ -44,11 +43,34 @@ export default function ConvenioDetail() {
     setError(null);
     convenioService
       .obtenerConvenio(id)
-      .then(setConvenio)
+      .then((c) => {
+        setConvenio(c);
+        return convenioService.listarProductosDeConvenio(c.id_convenio);
+      })
+      .then((prods) => {
+        setProductos(prods);
+        // Suma el inventario DISPONIBLE/ENTREGADA/etc. de todos los
+        // productos de este convenio (un convenio puede tener varios,
+        // sección 7) en un solo resumen agregado para esta vista.
+        return Promise.all(prods.map((p) => inventarioService.resumenInventario(p.id).catch(() => null)));
+      })
+      .then((resumenes) => {
+        if (resumenes.length === 0) { setInv(null); return; }
+        setInv(
+          resumenes.reduce(
+            (acc, r) => ({
+              disponible: acc.disponible + (r?.disponible ?? 0),
+              entregada: acc.entregada + (r?.entregada ?? 0),
+              vencida: acc.vencida + (r?.vencida ?? 0),
+              bloqueada: acc.bloqueada + (r?.bloqueada ?? 0),
+              total: acc.total + (r?.total ?? 0),
+            }),
+            { disponible: 0, entregada: 0, vencida: 0, bloqueada: 0, total: 0 }
+          )
+        );
+      })
       .catch((err) => setError(err.status === 404 ? null : err.message))
       .finally(() => setLoading(false));
-
-    inventarioService.resumenInventario(id).then(setInv).catch(() => setInv(null));
   }, [id]);
 
   useEffect(() => { cargar(); }, [cargar]);
@@ -59,8 +81,8 @@ export default function ConvenioDetail() {
     return <EmptyState title="Convenio no encontrado" description="Puede haber sido eliminado del catálogo." actionLabel="Volver a convenios" onAction={() => navigate(`${base}/convenios`)} />;
   }
 
-  const ahorro = convenio.precio_publico - convenio.precio_beet;
-  const ahorroPct = Math.round((ahorro / convenio.precio_publico) * 100);
+  const ahorro = convenio.precio_normal - convenio.precio_beet;
+  const ahorroPct = Math.round((ahorro / convenio.precio_normal) * 100);
 
   return (
     <div>
@@ -82,7 +104,7 @@ export default function ConvenioDetail() {
         <Card padding="card-pad-lg">
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
             <span className="text-display tabular">{formatCOP(convenio.precio_beet)}</span>
-            <span className="text-small" style={{ textDecoration: 'line-through' }}>{formatCOP(convenio.precio_publico)}</span>
+            <span className="text-small" style={{ textDecoration: 'line-through' }}>{formatCOP(convenio.precio_normal)}</span>
             <Badge tone="green" dot>Ahorras {ahorroPct}%</Badge>
           </div>
           <p className="text-body" style={{ color: 'var(--text-muted)', marginTop: 16 }}>{convenio.descripcion || 'Sin descripción registrada.'}</p>
@@ -132,6 +154,25 @@ export default function ConvenioDetail() {
           )}
         </Card>
       </div>
+
+      <Card padding="card-pad-lg" style={{ marginTop: 16 }}>
+        <div className="text-label" style={{ marginBottom: 14 }}>Productos de este convenio</div>
+        {productos.length === 0 ? (
+          <div className="text-small cell-muted">GES todavía no registró productos para este convenio en el catálogo maestro.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {productos.map((p) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border-default)' }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>{p.nombre}</div>
+                  <div className="cell-muted text-small">{p.descripcion ?? '—'}</div>
+                </div>
+                <StatusBadge status={p.estado} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <Card padding="card-pad-lg" style={{ marginTop: 16 }}>
         <div className="text-label" style={{ marginBottom: 14 }}>Transacciones recientes</div>

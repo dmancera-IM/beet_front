@@ -6,17 +6,17 @@ import TicketCard from '../../components/portal/TicketCard';
 import * as ticketsService from '../../services/ticketsService';
 import * as convenioService from '../../services/convenioService';
 
-// Real canonical states (app/models/enums.py::EstadoUnidadInventario) —
-// "Activo" in the old mock maps to "entregada" here.
+// Estados de unidades_inventario que puede ver el afiliado (sección 12 de
+// FRONTEND_DB_ALIGNMENT.md): DISPONIBLE nunca aplica aquí (eso es
+// inventario aún no entregado). BEET no controla la redención del bono —
+// no existe un estado "utilizado/redimida" (sección 13).
 const TABS = [
-  { key: 'entregada', label: 'Activos' },
-  { key: 'redimida', label: 'Utilizados' },
-  { key: 'vencida', label: 'Vencidos' },
-  { key: 'cancelada', label: 'Cancelados' },
+  { key: 'ENTREGADA', label: 'Activos' },
+  { key: 'VENCIDA', label: 'Vencidos' },
 ];
 
 export default function MyTickets() {
-  const [tab, setTab] = useState('entregada');
+  const [tab, setTab] = useState('ENTREGADA');
   const [tickets, setTickets] = useState([]);
   const [conveniosPorId, setConveniosPorId] = useState({});
   const [loading, setLoading] = useState(true);
@@ -65,7 +65,7 @@ export default function MyTickets() {
         ) : (
           <div className="grid grid-3">
             {filtrados.map((t) => (
-              <TicketCard key={t.id} ticket={t} convenio={conveniosPorId[t.convenio_id]} compact />
+              <TicketCard key={t.id} ticket={t} convenio={conveniosPorId[t.id_producto]} compact />
             ))}
           </div>
         )}

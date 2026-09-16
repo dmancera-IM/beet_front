@@ -37,14 +37,14 @@ import PortalLogin from './pages/portal/PortalLogin';
 import PortalHome from './pages/portal/PortalHome';
 import Catalogo from './pages/portal/Catalogo';
 import BenefitDetail from './pages/portal/BenefitDetail';
-import Profile from './pages/portal/Profile';
+import Profile from './pages/portal/Profile';  //perfil afiliado
 import MiCupo from './pages/portal/MiCupo';
 import PortalRegister from './pages/portal/PortalRegister';
 import PurchaseFlow from './pages/portal/PurchaseFlow';
 import MyTickets from './pages/portal/MyTickets';
 import TicketDetail from './pages/portal/TicketDetail';
 import EditProfile from './pages/portal/EditProfile';
-import PortalNotFound from './pages/portal/PortalNotFound';
+import PortalNotFound from './pages/portal/PortalNotFound'; //pafina de error portalafiliadd
 
 // NOT routed yet — the debt-assumption document (generated during a cupo
 // purchase, see backend/app/services/transaction_service.py) has no
