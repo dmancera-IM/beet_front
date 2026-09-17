@@ -15,7 +15,6 @@ import { useAreaBase } from '../../../hooks/useAreaBase';
 
 const ESTADOS_INVENTARIO = [
   { key: 'disponible', label: 'Disponible', tone: 'green' },
-  { key: 'bloqueada', label: 'Bloqueada', tone: 'amber' },
   { key: 'entregada', label: 'Entregada', tone: 'blue' },
   { key: 'vencida', label: 'Vencida', tone: 'neutral' },
 ];
@@ -62,10 +61,9 @@ export default function ConvenioDetail() {
               disponible: acc.disponible + (r?.disponible ?? 0),
               entregada: acc.entregada + (r?.entregada ?? 0),
               vencida: acc.vencida + (r?.vencida ?? 0),
-              bloqueada: acc.bloqueada + (r?.bloqueada ?? 0),
               total: acc.total + (r?.total ?? 0),
             }),
-            { disponible: 0, entregada: 0, vencida: 0, bloqueada: 0, total: 0 }
+            { disponible: 0, entregada: 0, vencida: 0, total: 0 }
           )
         );
       })
@@ -113,25 +111,7 @@ export default function ConvenioDetail() {
               <div className="text-label">Vigencia</div>
               <div style={{ fontSize: 14, fontWeight: 500 }}>{formatDate(convenio.fecha_inicio)}{convenio.fecha_fin ? ` – ${formatDate(convenio.fecha_fin)}` : ' – sin fin'}</div>
             </div>
-            <div>
-              <div className="text-label">Plantilla del convenio</div>
-              {convenio.plantilla_en_uso ? (
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{convenio.plantilla_en_uso}</div>
-              ) : (
-                <div className="text-small cell-muted">Sin plantilla seleccionada · se usa un ticket genérico</div>
-              )}
-            </div>
           </div>
-          <PermissionGate>
-            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              <Button size="sm" variant="secondary" onClick={() => setSeleccionarOpen(true)}>
-                Seleccionar plantilla
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setCrearHtmlOpen(true)}>
-                Crear plantilla con HTML
-              </Button>
-            </div>
-          </PermissionGate>
         </Card>
 
         <Card padding="card-pad-lg">

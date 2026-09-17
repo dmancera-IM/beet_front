@@ -16,8 +16,6 @@ const ACCION_LABELS = {
   plantilla_actualizada: 'Plantilla actualizada',
   plantilla_archivo_subido: 'Archivo de plantilla subido',
   inventario_carga_masiva: 'Carga de inventario',
-  inventario_bloqueado: 'Inventario bloqueado',
-  inventario_desbloqueado: 'Inventario desbloqueado',
   inventario_marcado_vencido: 'Inventario marcado como vencido',
   cupo_actualizado: 'Cupo actualizado',
   cupo_asignacion_masiva: 'Asignación masiva de cupos',

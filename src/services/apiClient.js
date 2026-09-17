@@ -189,11 +189,16 @@ function fakeXlsxBlob() {
 function ejecutarCompra(afiliado, { producto_id, cantidad, metodo_pago, numero_cuotas, firma_base64, numero_tarjeta }) {
   const producto = db.productoDe(producto_id);
   const cooperativaConvenio = db.cooperativaConvenioDeProducto(producto, afiliado.id_cooperativa);
-  if (!producto || !producto.estado || !cooperativaConvenio || !cooperativaConvenio.estado) {
+  const cooperativaProducto = producto ? db.cooperativaProductoDe(afiliado.id_cooperativa, producto.id) : null;
+  if (
+    !producto || !producto.estado ||
+    !cooperativaConvenio || !cooperativaConvenio.estado ||
+    !cooperativaProducto || !cooperativaProducto.estado
+  ) {
     throw new ApiError("Este beneficio ya no está disponible.", 404, "Producto no encontrado.");
   }
 
-  const subtotal = cooperativaConvenio.precio_beet * cantidad;
+  const subtotal = cooperativaProducto.precio_beet * cantidad;
   const total = subtotal;
 
   if (metodo_pago === "CUPO") {
@@ -427,6 +432,16 @@ async function handle(method, fullPath, body) {
     Object.assign(afiliado, body);
     return afiliadoOut(afiliado);
   }
+  if (is("api", "afiliados", "*") && method === "DELETE") {
+    // Eliminación real (no un estado "RETIRADO") — ver ADMIN → Afiliados.
+    currentAdmin();
+    const idx = db.afiliados.findIndex((a) => a.id === idAt(2));
+    if (idx < 0) throw new ApiError("Afiliado no encontrado.", 404, "No encontrado.");
+    db.afiliados.splice(idx, 1);
+    const cupoIdx = db.cupos.findIndex((c) => c.afiliado_id === idAt(2));
+    if (cupoIdx >= 0) db.cupos.splice(cupoIdx, 1);
+    return null;
+  }
 
   // ---- CONVENIOS (cooperativas_convenios) --------------------------------
   // Lo que el resto del frontend sigue llamando "convenio" es, en el nuevo
@@ -439,13 +454,11 @@ async function handle(method, fullPath, body) {
   }
   if (is("api", "convenios", "catalogo") && method === "GET") {
     // Catálogo del afiliado: un ítem POR PRODUCTO (un convenio puede tener
-    // varios productos, sección 7) de cada cooperativas_convenios activo de
-    // su cooperativa — nunca expone cooperativa_id.
+    // varios productos, sección 7), con el precio que SU cooperativa
+    // configuró para ese producto (cooperativa_productos — ver REGLA
+    // CRÍTICA en mockDb.js). Nunca expone cooperativa_id.
     const afiliado = currentAfiliado();
-    const activos = db.cooperativasConvenios.filter((cc) => cc.id_cooperativa === afiliado.id_cooperativa && cc.estado);
-    return activos.flatMap((cc) =>
-      db.productosDeCooperativaConvenio(cc).map((producto) => db.productoPublico(producto, cc))
-    );
+    return db.productosOfrecidosPorCooperativa(afiliado.id_cooperativa);
   }
   if (is("api", "convenios", "productos") && method === "GET") {
     // Productos del catálogo maestro para UN convenio (id_convenio) — usado
@@ -507,6 +520,66 @@ async function handle(method, fullPath, body) {
       Object.assign(cc, body);
     }
     return cooperativaConvenioOut(cc);
+  }
+
+  // ---- COOPERATIVA_PRODUCTOS (ADMIN → Convenios: precio por cooperativa +
+  // producto — sección 10.4/11) ------------------------------------------
+  // ADMIN nunca edita `productosConvenio` (catálogo maestro de GES, ver
+  // pages/admin/ges/gesData.js) — solo configura, por producto, el precio
+  // que SU cooperativa ofrece a sus afiliados, su vigencia, descripción y
+  // si está activo. Esto NO reemplaza `cooperativasConvenios` (que Lector/
+  // Súper admin siguen usando tal cual) — es una tabla adicional.
+  if (is("api", "cooperativa-productos") && method === "GET") {
+    const admin = currentAdmin();
+    const scope = resolveScope(admin);
+    const idConvenio = q.get("id_convenio");
+    const productos = db.productosConvenio.filter((p) => p.id_convenio === idConvenio);
+    return productos.map((p) => {
+      const cp = db.cooperativaProductoDe(scope, p.id);
+      const resumen = db.resumenInventarioDe(p.id);
+      return {
+        id_producto: p.id,
+        nombre: p.nombre,
+        descripcion_base: p.descripcion,
+        disponible: resumen.disponible,
+        configurado: !!cp,
+        precio_beet: cp?.precio_beet ?? null,
+        precio_normal: cp?.precio_normal ?? null,
+        fecha_inicio: cp?.fecha_inicio ?? null,
+        fecha_fin: cp?.fecha_fin ?? null,
+        descripcion: cp?.descripcion ?? p.descripcion,
+        estado: cp?.estado ?? false,
+      };
+    });
+  }
+  if (is("api", "cooperativa-productos", "*") && method === "GET") {
+    const admin = currentAdmin();
+    const scope = resolveScope(admin);
+    const producto = db.productoDe(idAt(2));
+    if (!producto) throw new ApiError("Producto no encontrado.", 404, "No encontrado.");
+    const cp = db.cooperativaProductoDe(scope, producto.id);
+    const resumen = db.resumenInventarioDe(producto.id);
+    return {
+      id_producto: producto.id,
+      nombre: producto.nombre,
+      descripcion_base: producto.descripcion,
+      disponible: resumen.disponible,
+      configurado: !!cp,
+      precio_beet: cp?.precio_beet ?? null,
+      precio_normal: cp?.precio_normal ?? null,
+      fecha_inicio: cp?.fecha_inicio ?? null,
+      fecha_fin: cp?.fecha_fin ?? null,
+      descripcion: cp?.descripcion ?? producto.descripcion,
+      estado: cp?.estado ?? false,
+    };
+  }
+  if (is("api", "cooperativa-productos", "*") && method === "PATCH") {
+    const admin = currentAdmin();
+    const scope = resolveScope(admin);
+    const producto = db.productoDe(idAt(2));
+    if (!producto) throw new ApiError("Producto no encontrado.", 404, "No encontrado.");
+    const cp = db.upsertCooperativaProducto(scope, producto.id, body);
+    return { ...cp, nombre: producto.nombre, descripcion_base: producto.descripcion, disponible: db.resumenInventarioDe(producto.id).disponible, configurado: true };
   }
 
   // ---- CUPOS ----------------------------------------------------------
@@ -638,16 +711,6 @@ async function handle(method, fullPath, body) {
     }
     return { detail: `Se cargaron ${cantidad} códigos nuevos desde "${file?.name ?? "el archivo"}".`, invalidos: 0, omitidos: 0, errores: [] };
   }
-  if (is("api", "inventario", "bloquear") && method === "POST") {
-    currentAdmin();
-    db.unidadesInventario.forEach((u) => { if (body.unidad_ids.includes(u.id)) u.estado = "BLOQUEADA"; });
-    return { detail: `${body.unidad_ids.length} unidad(es) bloqueada(s).` };
-  }
-  if (is("api", "inventario", "desbloquear") && method === "POST") {
-    currentAdmin();
-    db.unidadesInventario.forEach((u) => { if (body.unidad_ids.includes(u.id)) u.estado = "DISPONIBLE"; });
-    return { detail: `${body.unidad_ids.length} unidad(es) desbloqueada(s).` };
-  }
   if (is("api", "inventario") && method === "GET") {
     currentAdmin();
     let rows = db.unidadesInventario.filter((u) => u.id_producto === Number(q.get("producto_id")));
@@ -746,8 +809,24 @@ async function handle(method, fullPath, body) {
 
   // ---- TICKETS ------------------------------------------------------------
   if (is("api", "tickets", "me") && method === "GET") {
+    // `fecha_vencimiento` se deriva de la vigencia (fecha_fin) que la
+    // cooperativa configuró para ese producto (cooperativa_productos) — no
+    // es un campo propio del ticket, reutiliza la vigencia ya existente
+    // (sección "Alerta de tickets próximos a vencer").
     const afiliado = currentAfiliado();
-    return db.tickets.filter((t) => t.afiliado_id === afiliado.id);
+    return db.tickets
+      .filter((t) => t.afiliado_id === afiliado.id)
+      .map((t) => {
+        const producto = db.productoDe(t.id_producto);
+        const cc = producto ? db.cooperativaConvenioDeProducto(producto, afiliado.id_cooperativa) : null;
+        const cp = producto ? db.cooperativaProductoDe(afiliado.id_cooperativa, producto.id) : null;
+        return {
+          ...t,
+          producto_nombre: producto?.nombre ?? null,
+          convenio_nombre: cc?.nombre ?? null,
+          fecha_vencimiento: cp?.fecha_fin ?? null,
+        };
+      });
   }
   if (is("api", "tickets", "me", "*", "descarga") && method === "GET") {
     const afiliado = currentAfiliado();

@@ -20,6 +20,11 @@ export function actualizarAfiliado(id, payload) {
   return apiClient.patch(`/api/afiliados/${id}`, payload, { tokenAudience: "admin" });
 }
 
+// Eliminación real (no un estado "retirado") — ver ADMIN → Afiliados.
+export function eliminarAfiliado(id) {
+  return apiClient.delete(`/api/afiliados/${id}`, { tokenAudience: "admin" });
+}
+
 export function cargaMasivaAfiliados(file) {
   const formData = new FormData();
   formData.append("file", file);

@@ -35,8 +35,26 @@ function buildNav(role, roles) {
     ];
   }
 
-  // ADMIN / LECTOR / SUPER_ADMIN comparten el mismo panel de cooperativa —
-  // solo cambia el prefijo de ruta y qué items extra ven.
+  if (role === roles.ADMIN) {
+    // Sidebar de ADMIN (definición funcional de ADMIN): orden fijo, sin
+    // Inventario ni Cupos de crédito como secciones propias — el inventario
+    // se ve dentro de Convenios y la gestión de cupo dentro de Afiliados.
+    // Solo afecta a ADMIN: Lector y Súper admin conservan su menú de
+    // siempre más abajo, sin ningún cambio.
+    return [
+      { to: base, label: 'Dashboard', icon: IconDashboard, end: true },
+      { to: `${base}/afiliados`, label: 'Afiliados', icon: IconAfiliados },
+      { to: `${base}/convenios`, label: 'Convenios', icon: IconConvenios },
+      { to: `${base}/ges`, label: 'GES', icon: IconGes },
+      { to: `${base}/transacciones`, label: 'Transacciones', icon: IconVentas },
+      { to: `${base}/reportes`, label: 'Reportes', icon: IconReportes },
+      { to: `${base}/documentos-legales`, label: 'Documentos legales', icon: IconDocumentos },
+      { to: `${base}/configuracion`, label: 'Configuración', icon: IconConfiguracion },
+    ];
+  }
+
+  // LECTOR / SUPER_ADMIN comparten el mismo panel de cooperativa — sin
+  // ningún cambio respecto a antes (solo se modificó el menú de ADMIN).
   const nav = [
     { to: base, label: 'Dashboard', icon: IconDashboard, end: true },
     { to: `${base}/convenios`, label: 'Convenios', icon: IconConvenios },
@@ -47,20 +65,17 @@ function buildNav(role, roles) {
     { to: `${base}/reportes`, label: 'Reportes', icon: IconReportes },
   ];
   if (role === roles.SUPER_ADMIN) {
-    // Vista panorámica de todo BEET — va primero porque es la vista
-    // principal de Súper admin (sección 6); el "Dashboard" de abajo sigue
-    // siendo el de la cooperativa seleccionada en el header, sin cambios.
-    nav.unshift({ to: `${base}/panorama`, label: 'Dashboard Super Admin', icon: IconDashboard });
+    // "Dashboard Super Admin" (/super-admin/panorama) ya NO es un ítem
+    // independiente del sidebar — se accede desde el selector de
+    // cooperativa del header (ver Header.jsx). La ruta sigue existiendo
+    // tal cual, solo cambió cómo se navega a ella.
     nav.push({ to: `${base}/usuarios`, label: 'Usuarios', icon: IconUsers });
   }
   nav.push({ to: `${base}/documentos-legales`, label: 'Documentos legales', icon: IconDocumentos });
   if (role !== roles.LECTOR) {
     nav.push({ to: `${base}/configuracion`, label: 'Configuración', icon: IconConfiguracion });
   }
-  if (role === roles.ADMIN) {
-    // Solo el formulario de solicitud — NUNCA el panel completo de GES.
-    nav.push({ to: `${base}/ges`, label: 'GES', icon: IconGes });
-  }
+  // ADMIN ya retornó su propio menú arriba — de aquí en adelante solo aplica a Súper admin.
   if (role === roles.SUPER_ADMIN) {
     // Súper admin SÍ puede entrar al panel completo de GES (sección 25).
     nav.push({ to: '/ges', label: 'GES', icon: IconGes });

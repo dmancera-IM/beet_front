@@ -27,11 +27,3 @@ export function cargaMasivaInventario(file) {
   formData.append("file", file);
   return apiClient.postForm("/api/inventario/carga-masiva", formData, { tokenAudience: "admin" });
 }
-
-export function bloquearUnidades(unidad_ids, motivo) {
-  return apiClient.post("/api/inventario/bloquear", { unidad_ids, motivo }, { tokenAudience: "admin" });
-}
-
-export function desbloquearUnidades(unidad_ids, motivo) {
-  return apiClient.post("/api/inventario/desbloquear", { unidad_ids, motivo }, { tokenAudience: "admin" });
-}

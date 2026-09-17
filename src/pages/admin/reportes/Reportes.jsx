@@ -116,14 +116,6 @@ export default function Reportes() {
           >
             Exportar rendimiento
           </Button>
-          <Button
-            variant="secondary"
-            icon={<IconDescargar size={15} color="#1F2937" />}
-            loading={exportando === 'afiliados'}
-            onClick={() => exportar('afiliados')}
-          >
-            Exportar afiliados
-          </Button>
         </div>
       </div>
 

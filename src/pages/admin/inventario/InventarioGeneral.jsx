@@ -32,8 +32,8 @@ export default function InventarioGeneral() {
         setConvenios(data.items);
         // Un convenio puede tener varios productos (sección 7) y el
         // inventario se identifica por producto — se suma DISPONIBLE/
-        // ENTREGADA/VENCIDA/BLOQUEADA de todos los productos de cada
-        // convenio para mostrar un solo resumen agregado por fila.
+        // ENTREGADA/VENCIDA de todos los productos de cada convenio para
+        // mostrar un solo resumen agregado por fila.
         return Promise.all(
           data.items.map((c) =>
             convenioService
@@ -48,9 +48,8 @@ export default function InventarioGeneral() {
                       disponible: acc.disponible + (r?.disponible ?? 0),
                       entregada: acc.entregada + (r?.entregada ?? 0),
                       vencida: acc.vencida + (r?.vencida ?? 0),
-                      bloqueada: acc.bloqueada + (r?.bloqueada ?? 0),
                     }),
-                    { disponible: 0, entregada: 0, vencida: 0, bloqueada: 0 }
+                    { disponible: 0, entregada: 0, vencida: 0 }
                   ),
                 ];
               })
@@ -84,9 +83,8 @@ export default function InventarioGeneral() {
       disponible: acc.disponible + (r?.disponible ?? 0),
       entregada: acc.entregada + (r?.entregada ?? 0),
       vencida: acc.vencida + (r?.vencida ?? 0),
-      bloqueada: acc.bloqueada + (r?.bloqueada ?? 0),
     }),
-    { disponible: 0, entregada: 0, vencida: 0, bloqueada: 0 }
+    { disponible: 0, entregada: 0, vencida: 0 }
   );
 
   return (
@@ -101,8 +99,7 @@ export default function InventarioGeneral() {
       <div className="grid grid-kpi section-gap">
         <KpiCard label="Disponible" value={totales.disponible} deltaTone="neutral" delta="Unidades listas para venta" />
         <KpiCard label="Entregada" value={totales.entregada} deltaTone="neutral" delta="Asignadas a afiliados" />
-        <KpiCard label="Vencidas" value={totales.vencida} deltaTone="warning" delta="Sin redimir, fuera de vigencia" icon={<IconWarningTriangle size={14} color="var(--warning)" />} />
-        <KpiCard label="Bloqueadas" value={totales.bloqueada} deltaTone="neutral" delta="Códigos bloqueados" />
+        <KpiCard label="Vencidas" value={totales.vencida} deltaTone="warning" delta="Fuera de vigencia" icon={<IconWarningTriangle size={14} color="var(--warning)" />} />
       </div>
 
       {convenios.length === 0 ? (
@@ -117,7 +114,6 @@ export default function InventarioGeneral() {
                   <th className="right">Disponible</th>
                   <th className="right">Entregada</th>
                   <th className="right">Vencida</th>
-                  <th className="right">Bloqueada</th>
                   <th></th>
                 </tr>
               </thead>
@@ -135,7 +131,6 @@ export default function InventarioGeneral() {
                       <td className="right">
                         {inv?.vencida > 0 ? <Badge tone="amber">{inv.vencida}</Badge> : <span className="tabular">{inv?.vencida ?? 0}</span>}
                       </td>
-                      <td className="right tabular">{inv?.bloqueada ?? '—'}</td>
                       <td className="right"><Link to={`${base}/inventario/${c.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver detalle</Link></td>
                     </tr>
                   );

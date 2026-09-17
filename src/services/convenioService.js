@@ -24,6 +24,25 @@ export function obtenerCatalogoAfiliado() {
   return apiClient.get("/api/convenios/catalogo", { tokenAudience: "afiliado" });
 }
 
+// ADMIN → Convenios: precio/vigencia/descripción que la cooperativa
+// configura POR PRODUCTO (nunca a nivel de convenio — el precio pertenece a
+// cooperativa + producto). `listarProductosCooperativa` trae, para un
+// convenio del catálogo maestro, todos sus productos ya combinados con lo
+// que esta cooperativa configuró (o valores vacíos si aún no configuró
+// nada); `obtener/actualizarConfiguracionProducto` operan sobre un producto
+// puntual.
+export function listarProductosCooperativa(idConvenio) {
+  return apiClient.get(`/api/cooperativa-productos?id_convenio=${encodeURIComponent(idConvenio)}`, { tokenAudience: "admin" });
+}
+
+export function obtenerConfiguracionProducto(productoId) {
+  return apiClient.get(`/api/cooperativa-productos/${productoId}`, { tokenAudience: "admin" });
+}
+
+export function actualizarConfiguracionProducto(productoId, payload) {
+  return apiClient.patch(`/api/cooperativa-productos/${productoId}`, payload, { tokenAudience: "admin" });
+}
+
 export function obtenerConvenio(id) {
   return apiClient.get(`/api/convenios/${id}`, { tokenAudience: "admin" });
 }

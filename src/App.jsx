@@ -27,6 +27,15 @@ import CuposList from './pages/admin/cupos/CuposList';
 import TransaccionesList from './pages/admin/transacciones/TransaccionesList';
 import TransaccionDetail from './pages/admin/transacciones/TransaccionDetail';
 import Reportes from './pages/admin/reportes/Reportes';
+// ===== Páginas exclusivas de ADMIN (ver definición funcional de ADMIN) =====
+// Forks dedicados para no tocar en absoluto lo que Lector/Súper admin ya
+// usan arriba (mismos componentes de siempre, sin cambios).
+import ConveniosListAdmin from './pages/admin/convenios/ConveniosListAdmin';
+import ConvenioDetailAdmin from './pages/admin/convenios/ConvenioDetailAdmin';
+import ProductoConfigForm from './pages/admin/convenios/ProductoConfigForm';
+import AfiliadosListAdmin from './pages/admin/afiliados/AfiliadosListAdmin';
+import AfiliadoDetailAdmin from './pages/admin/afiliados/AfiliadoDetailAdmin';
+import TransaccionesListAdmin from './pages/admin/transacciones/TransaccionesListAdmin';
 import UsuariosList from './pages/admin/usuarios/UsuariosList';
 import Configuracion from './pages/admin/configuracion/Configuracion';
 import DocumentosLegales from './pages/admin/documentos/DocumentosLegales';
@@ -126,7 +135,11 @@ export default function App() {
         <Route path="*" element={<NotFound />} />
       </Route>
 
-      {/* ===== Administrador de cooperativa — solo SU cooperativa ===== */}
+      {/* ===== Administrador de cooperativa — solo SU cooperativa =====
+          Rutas propias (no `paginasCooperativa`): sin Inventario ni Cupos
+          como secciones independientes — ver Sidebar.jsx y la definición
+          funcional de ADMIN. Lector y Súper admin siguen usando
+          `paginasCooperativa` sin ningún cambio, más abajo. */}
       <Route
         path="/admin"
         element={
@@ -135,7 +148,15 @@ export default function App() {
           </RequireRole>
         }
       >
-        {paginasCooperativa}
+        <Route index element={<Dashboard />} />
+        <Route path="convenios" element={<ConveniosListAdmin />} />
+        <Route path="convenios/:id" element={<ConvenioDetailAdmin />} />
+        <Route path="convenios/:id/productos/:productoId" element={<ProductoConfigForm />} />
+        <Route path="afiliados" element={<AfiliadosListAdmin />} />
+        <Route path="afiliados/:id" element={<AfiliadoDetailAdmin />} />
+        <Route path="transacciones" element={<TransaccionesListAdmin />} />
+        <Route path="reportes" element={<Reportes />} />
+        <Route path="documentos-legales" element={<DocumentosLegales />} />
         <Route path="configuracion" element={<Configuracion />} />
         {/* Solo el formulario de solicitud — nunca el panel completo de GES. */}
         <Route path="ges" element={<ComprarBonosGes />} />

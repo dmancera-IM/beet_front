@@ -107,9 +107,6 @@ export default function TransaccionesList() {
             <p className="text-caption" style={{ marginTop: 4 }}>Estás gestionando datos de: {selected.nombre}</p>
           )}
         </div>
-        <div className="page-header-actions">
-          <Button variant="secondary" icon={<IconDescargar size={15} color="#1F2937" />}>Exportar</Button>
-        </div>
       </div>
 
       <div className="table-card">
@@ -130,8 +127,8 @@ export default function TransaccionesList() {
             </Select>
             <Select style={{ width: 150 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
               <option value="">Todo estado</option>
-              <option value="PENDIENTE">Pendiente</option>
-              <option value="COMPLETADA">Completada</option>
+              <option value="rechazada">rechazada</option>
+              <option value="aprobada">aprobada</option>
             </Select>
           </div>
         </div>

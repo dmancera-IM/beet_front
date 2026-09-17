@@ -30,6 +30,7 @@ let nextId = {
   cooperativa: 100,
   afiliado: 1000,
   cooperativaConvenio: 100,
+  cooperativaProducto: 100,
   unidad: 10000,
   cupo: 100,
   transaccion: 5000,
@@ -137,7 +138,11 @@ export const productosConvenio = [
 // ---------------------------------------------------------------------------
 
 export const cooperativasConvenios = [
-  { id: 1, id_cooperativa: 1, id_convenio: 'cine-colombia', nombre: 'Cine Colombia', descripcion: 'Entradas 2D/3D válidas de lunes a viernes.', precio_normal: 18000, precio_beet: 12500, fecha_inicio: dateOnly(-120), fecha_fin: dateOnly(120), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
+  // fecha_fin en +3 días a propósito: Juan Pérez (afiliado 1) ya tiene
+  // tickets entregados de este producto (ver `tickets` más abajo), así la
+  // alerta de "tickets próximos a vencer" del portal tiene algo real que
+  // mostrar en la demo (regla: vence en 7 días o menos, sección 7).
+  { id: 1, id_cooperativa: 1, id_convenio: 'cine-colombia', nombre: 'Cine Colombia', descripcion: 'Entradas 2D/3D válidas de lunes a viernes.', precio_normal: 18000, precio_beet: 12500, fecha_inicio: dateOnly(-120), fecha_fin: dateOnly(3), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
   { id: 2, id_cooperativa: 1, id_convenio: 'mundo-aventura', nombre: 'Mundo Aventura', descripcion: 'Entrada general al parque.', precio_normal: 65000, precio_beet: 48000, fecha_inicio: dateOnly(-90), fecha_fin: dateOnly(200), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
   { id: 3, id_cooperativa: 1, id_convenio: 'exito', nombre: 'Éxito', descripcion: 'Bono de mercado, válido en todo el país.', precio_normal: 50000, precio_beet: 46000, fecha_inicio: dateOnly(-200), fecha_fin: null, estado: true, plantilla_en_uso: 'Diseño oficial', imagen_marca_url: null },
   { id: 4, id_cooperativa: 1, id_convenio: 'salitre-magico', nombre: 'Salitre Mágico', descripcion: 'Entrada general al parque de diversiones.', precio_normal: 55000, precio_beet: 39000, fecha_inicio: dateOnly(-30), fecha_fin: dateOnly(10), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
@@ -153,12 +158,90 @@ export function productosDeCooperativaConvenio(cc) {
 }
 
 // ---------------------------------------------------------------------------
+// cooperativa_productos (vista ADMIN de Convenios) — REGLA CRÍTICA: el
+// precio NO pertenece al convenio ni al producto del catálogo maestro de
+// GES; pertenece a la combinación COOPERATIVA + PRODUCTO. Cada cooperativa
+// configura su propio precio/vigencia/descripción por producto, aunque el
+// producto (y su convenio) sea el mismo para todas. `cooperativasConvenios`
+// arriba sigue existiendo tal cual para las vistas de Lector/Súper admin
+// (no se les quitó ni cambió ningún campo); esta tabla nueva es la que usa
+// la vista de ADMIN → Convenios y de aquí en adelante también el catálogo
+// del afiliado (ver `productosOfrecidosPorCooperativa`).
+//
+// Se siembra una fila por cada (cooperativa_convenio × producto) ya
+// existente, copiando su precio/vigencia, para que el catálogo del
+// afiliado no cambie visualmente apenas se introduce esta tabla — a partir
+// de aquí, cada cooperativa edita esto de forma independiente por producto.
+// ---------------------------------------------------------------------------
+
+export const cooperativaProductos = [];
+cooperativasConvenios.forEach((cc) => {
+  productosConvenio
+    .filter((p) => p.id_convenio === cc.id_convenio)
+    .forEach((p) => {
+      cooperativaProductos.push({
+        id: newId('cooperativaProducto'),
+        id_cooperativa: cc.id_cooperativa,
+        id_producto: p.id,
+        precio_beet: cc.precio_beet,
+        precio_normal: cc.precio_normal,
+        fecha_inicio: cc.fecha_inicio,
+        fecha_fin: cc.fecha_fin,
+        descripcion: p.descripcion,
+        estado: cc.estado,
+      });
+    });
+});
+
+export function cooperativaProductoDe(idCooperativa, idProducto) {
+  return cooperativaProductos.find((cp) => cp.id_cooperativa === Number(idCooperativa) && cp.id_producto === Number(idProducto)) ?? null;
+}
+
+// Crea o actualiza la configuración de UN producto para UNA cooperativa
+// (precio para afiliados, vigencia, descripción, estado). ADMIN nunca edita
+// el producto del catálogo maestro de GES (`productosConvenio`) — solo
+// esta fila, que es exclusivamente de su cooperativa.
+export function upsertCooperativaProducto(idCooperativa, idProducto, cambios) {
+  let cp = cooperativaProductoDe(idCooperativa, idProducto);
+  if (!cp) {
+    cp = {
+      id: newId('cooperativaProducto'), id_cooperativa: Number(idCooperativa), id_producto: Number(idProducto),
+      precio_beet: null, precio_normal: null, fecha_inicio: null, fecha_fin: null, descripcion: null, estado: false,
+    };
+    cooperativaProductos.push(cp);
+  }
+  Object.assign(cp, cambios);
+  return cp;
+}
+
+// Productos que una cooperativa realmente ofrece a sus afiliados: el
+// producto debe seguir activo en el catálogo maestro de GES, el convenio
+// debe seguir activo para la cooperativa (cooperativas_convenios.estado), y
+// la cooperativa debe haber configurado y activado su propio precio para
+// ese producto (cooperativa_productos.estado). Usado por el catálogo del
+// afiliado — ver productoPublico más abajo.
+export function productosOfrecidosPorCooperativa(idCooperativa) {
+  return cooperativaProductos
+    .filter((cp) => cp.id_cooperativa === idCooperativa && cp.estado)
+    .map((cp) => {
+      const producto = productoDe(cp.id_producto);
+      if (!producto || !producto.estado) return null;
+      const cc = cooperativasConvenios.find((c) => c.id_cooperativa === idCooperativa && c.id_convenio === producto.id_convenio);
+      if (!cc || !cc.estado) return null;
+      return productoPublico(producto, cp, cc);
+    })
+    .filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
 // unidades_inventario — unidades/códigos individuales que la cooperativa ya
 // tiene disponibles para entregar a sus afiliados (ver sección 12). Cada
 // unidad pertenece a UN producto y a UNA sola cooperativa.
 // ---------------------------------------------------------------------------
 
-const ESTADOS_UNIDAD_MUESTRA = ['DISPONIBLE', 'DISPONIBLE', 'DISPONIBLE', 'ENTREGADA', 'ENTREGADA', 'VENCIDA', 'BLOQUEADA'];
+// Únicos estados operativos visibles para unidades_inventario (sección 12):
+// DISPONIBLE, ENTREGADA, VENCIDA — sin "bloqueada" ni ningún otro inventado.
+const ESTADOS_UNIDAD_MUESTRA = ['DISPONIBLE', 'DISPONIBLE', 'DISPONIBLE', 'ENTREGADA', 'ENTREGADA', 'VENCIDA'];
 
 export const unidadesInventario = [];
 function sembrarInventario(cooperativaId, productoId, prefijo, cantidad) {
@@ -298,20 +381,21 @@ export function cooperativaConvenioDeProducto(producto, cooperativaId) {
   return cooperativasConvenios.find((cc) => cc.id_cooperativa === cooperativaId && cc.id_convenio === producto.id_convenio) ?? null;
 }
 
-// Shape sent to the afiliado-facing catalog: un producto comprable, con el
-// precio/vigencia heredados del cooperativas_convenios que lo habilitó
-// (sección 10 no define precio a nivel de producto). Nunca expone
-// cooperativa_id/id ids internos de la cooperativa.
-export function productoPublico(producto, cooperativaConvenio) {
+// Shape sent to the afiliado-facing catalog: un producto comprable. El
+// precio/vigencia/descripción vienen de `cooperativaProducto` (cooperativa +
+// producto — ver REGLA CRÍTICA arriba); `cooperativaConvenio` solo aporta el
+// nombre comercial del convenio y la imagen de marca. Nunca expone
+// cooperativa_id/ids internos de la cooperativa.
+export function productoPublico(producto, cooperativaProducto, cooperativaConvenio) {
   return {
     id: producto.id,
     nombre: producto.nombre,
-    descripcion: producto.descripcion,
+    descripcion: cooperativaProducto.descripcion ?? producto.descripcion,
     convenio_nombre: cooperativaConvenio.nombre,
-    precio_beet: cooperativaConvenio.precio_beet,
-    precio_normal: cooperativaConvenio.precio_normal,
-    fecha_inicio: cooperativaConvenio.fecha_inicio,
-    fecha_fin: cooperativaConvenio.fecha_fin,
+    precio_beet: cooperativaProducto.precio_beet,
+    precio_normal: cooperativaProducto.precio_normal,
+    fecha_inicio: cooperativaProducto.fecha_inicio,
+    fecha_fin: cooperativaProducto.fecha_fin,
     imagen_marca_url: cooperativaConvenio.imagen_marca_url,
   };
 }
@@ -323,7 +407,6 @@ export function resumenInventarioDe(productoId) {
     disponible: contar('DISPONIBLE'),
     entregada: contar('ENTREGADA'),
     vencida: contar('VENCIDA'),
-    bloqueada: contar('BLOQUEADA'),
     total: rows.length,
   };
 }

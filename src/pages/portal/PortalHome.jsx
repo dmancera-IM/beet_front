@@ -4,6 +4,7 @@ import { useAffiliateAuth } from '../../context/AffiliateAuthContext';
 import { Card, ProgressStatCard } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/Badge';
 import BenefitCard from '../../components/portal/BenefitCard';
+import TicketsPorVencerAlert from '../../components/portal/TicketsPorVencerAlert';
 import { EmptyState, ErrorState, LoadingState } from '../../components/ui/States';
 import * as convenioService from '../../services/convenioService';
 import { useMiCupo } from '../../hooks/useMiCupo';
@@ -35,6 +36,8 @@ export default function PortalHome() {
         <h1 className="portal-hero-title">Hola, {afiliado.nombres} 👋</h1>
         <p className="portal-hero-sub">Consulta tu información, tu cupo de crédito y los beneficios disponibles para ti.</p>
       </div>
+
+      <TicketsPorVencerAlert />
 
       <div className="grid grid-2 section-gap">
         <Card>

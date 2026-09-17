@@ -32,13 +32,11 @@ const STATUS_MAP = {
   inactivo: { tone: 'neutral', dot: true, label: 'Inactivo' },
   // unidades_inventario.estado (sección 12 del modelo) — solo estos tres
   // existen; BEET no controla la redención del bono, así que no hay un
-  // estado "utilizado/redimida" (sección 13). BLOQUEADA es un control
-  // operativo del inventario de la cooperativa (bloquear/desbloquear), no
-  // parte de las 9 tablas canónicas, pero tampoco lo prohíbe el modelo.
+  // estado "utilizado/redimida" (sección 13), y tampoco existe un estado
+  // "bloqueada" en la interfaz.
   DISPONIBLE: { tone: 'green', dot: true, label: 'Disponible' },
   ENTREGADA: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Entregada' },
   VENCIDA: { tone: 'vencido', label: 'Vencida' },
-  BLOQUEADA: { tone: 'amber', label: 'Bloqueada' },
   ASIGNADO: { tone: 'blue-solid', icon: <IconCheckSmall color="var(--brand-primary)" />, label: 'Asignado' },
   // transacciones.estado (sección 11) — únicamente estos dos: no hay
   // aprobar/rechazar manual.

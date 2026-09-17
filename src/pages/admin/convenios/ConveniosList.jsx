@@ -223,9 +223,7 @@ export default function ConveniosList() {
           )}
         </div>
         <div className="page-header-actions">
-          <Button variant="secondary" icon={<IconDescargar size={15} color="#1F2937" />} loading={exporting} onClick={handleExport} disabled={necesitaSeleccion}>Exportar</Button>
           <PermissionGate>
-            <Button variant="secondary" icon={<IconUpload size={16} color="#1F2937" />} onClick={() => setUploadOpen(true)} disabled={necesitaSeleccion}>Cargar convenios</Button>
             <Button variant="secondary" onClick={abrirModificar} disabled={necesitaSeleccion || convenios.length === 0}>Modificar convenio</Button>
             <Button icon={<IconPlus color="#fff" />} onClick={abrirCatalogo} disabled={necesitaSeleccion}>Agregar convenio</Button>
           </PermissionGate>

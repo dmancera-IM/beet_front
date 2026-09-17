@@ -211,10 +211,6 @@ export default function ConvenioForm() {
             </div>
           </Card>
 
-          <Alert tone="info" title="La plantilla de este convenio se administra por separado">
-            Desde aquí solo se configuran los datos comerciales. El código, QR y estado de cada unidad se cargan luego desde Inventario.
-          </Alert>
-
           <div className="page-header-actions" style={{ justifyContent: 'flex-end', marginTop: 24 }}>
             <Button variant="secondary" type="button" onClick={() => navigate(`${base}/convenios`)} disabled={saving}>Cancelar</Button>
             <Button type="submit" loading={saving}>{isEdit ? 'Guardar cambios' : 'Crear convenio'}</Button>

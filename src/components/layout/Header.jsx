@@ -41,18 +41,33 @@ export default function Header({ breadcrumbs, onOpenMobileNav }) {
       <div className="app-header-right">
         {/* Persistent cooperativa selector — SUPER_ADMIN only. ADMIN/LECTOR
             are always scoped server-side to their own cooperativa and
-            never see this control (see CooperativaContext). */}
+            never see this control (see CooperativaContext). "Dashboard
+            Super Admin" ya no es un ítem del sidebar (ver Sidebar.jsx) —
+            vive aquí, al final del desplegable, como una acción de
+            navegación (no cambia la cooperativa seleccionada). La ruta
+            /super-admin/panorama sigue existiendo tal cual.
+            Elegir una cooperativa SÍ navega a su dashboard (/super-admin) —
+            antes solo actualizaba el contexto en silencio, así que si ya
+            estabas en el panorama (vista global, no filtrable por
+            cooperativa) o en otra sección, parecía que la selección no
+            hacía nada. */}
         {isSuperAdmin && (
           <Select
             aria-label="Cooperativa seleccionada"
             value={selectedId ?? ''}
-            onChange={(e) => seleccionar(e.target.value || null)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '__panorama__') { navigate('/super-admin/panorama'); return; }
+              seleccionar(value || null);
+              if (value) navigate('/super-admin');
+            }}
             style={{ minWidth: 200 }}
           >
             <option value="">Selecciona una cooperativa…</option>
             {cooperativas.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}{!c.estado ? ' (inactiva)' : ''}</option>
             ))}
+            <option value="__panorama__">Dashboard Super Admin</option>
           </Select>
         )}
 

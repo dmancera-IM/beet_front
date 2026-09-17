@@ -16,7 +16,14 @@ import { useAreaBase } from '../hooks/useAreaBase';
 export default function Dashboard() {
   useSetBreadcrumbs([{ label: 'Dashboard' }]);
   const { nombreEntidad } = useAuth();
-  const { necesitaSeleccion, selectedId } = useCooperativa();
+  const { necesitaSeleccion, selectedId, selected, isSuperAdmin } = useCooperativa();
+  // Para SUPER_ADMIN, `nombreEntidad` (AuthContext) solo se resuelve una vez
+  // al iniciar sesión y no cambia cuando se selecciona otra cooperativa en
+  // el selector del header — este es justamente el bug reportado ("elige
+  // Cooperativa A pero el dashboard sigue mostrando el nombre anterior").
+  // `useCooperativa().selected` sí es la cooperativa vigente en cada
+  // render, así que se usa esa en su lugar cuando aplica.
+  const nombreCooperativaActual = isSuperAdmin ? (selected?.nombre ?? 'Selecciona una cooperativa') : nombreEntidad;
   const base = useAreaBase();
 
   const [stats, setStats] = useState(null);
@@ -60,7 +67,7 @@ export default function Dashboard() {
     <div>
       <div className="page-header">
         <div>
-          <span className="text-label">{nombreEntidad}</span>
+          <span className="text-label">{nombreCooperativaActual}</span>
           <h1 className="text-h1 page-title">Dashboard</h1>
           <p className="page-subtitle">Visibilidad en tiempo real de ventas, redenciones, inventario y ahorro generado a los afiliados.</p>
         </div>
