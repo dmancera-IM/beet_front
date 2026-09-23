@@ -17,9 +17,12 @@ export default function GesTransacciones() {
 
   const solicitudes = getSolicitudes();
 
+  // Buscar únicamente entre administradores de cooperativas y cooperativas
+  // (nunca afiliados ni otros tipos de usuario — esta tabla tampoco los
+  // tiene, son solicitudes GES↔cooperativa).
   const { search, setSearch, filters, setFilter, pageRows, total } = useTableState({
     data: solicitudes,
-    searchFields: ['cooperativaNombre', 'proveedorNombre', 'administrador'],
+    searchFields: ['cooperativaNombre', 'administrador'],
     pageSize: 50,
   });
 
@@ -39,7 +42,7 @@ export default function GesTransacciones() {
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 280 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar por entidad, administrador o convenio..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Buscar administrador o cooperativa..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
             <Select style={{ width: 160 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
               <option value="">Todo estado</option>

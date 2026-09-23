@@ -765,20 +765,9 @@ async function handle(method, fullPath, body) {
     const ventasTarjeta = trxScope.filter((t) => t.metodo_pago === "TARJETA").reduce((s, t) => s + t.total, 0);
     const ventasCupo = trxScope.filter((t) => t.metodo_pago === "CUPO").reduce((s, t) => s + t.total, 0);
     const ventasTotal = ventasTarjeta + ventasCupo;
-    const ahorro = trxScope.reduce((s, t) => {
-      const producto = db.productoDe(t.id_producto);
-      const cc = db.cooperativaConvenioDeProducto(producto, scope);
-      return s + (cc ? (cc.precio_normal - cc.precio_beet) * t.cantidad : 0);
-    }, 0);
-    const en30dias = new Date();
-    en30dias.setDate(en30dias.getDate() + 30);
-
-    // Capacidad de compra de la entidad (sección "Ahorro generado" del
-    // dashboard) — mismo cupo de crédito con GES que ya se ve en
-    // GES → Entidades y en el panorama de Súper admin, nunca un valor
-    // independiente. La bolsa es un monto que la entidad compra bajo
-    // demanda (no un saldo corriente), así que este KPI usa el cupo de
-    // crédito, que sí es un saldo disponible.
+    // Bolsa y crédito de la entidad (sección "Bolsa" y "Cupo de crédito
+    // disponible" del dashboard) — mismos valores independientes que ya se
+    // ven en GES → Entidades/CooperativaDetail, nunca un saldo aparte.
     const cooperativaGes = scope ? getCooperativa(scope) : null;
 
     // Inventario restante por convenio (sección "Cupo consumido de
@@ -794,9 +783,9 @@ async function handle(method, fullPath, body) {
 
     return {
       ventas_del_mes: ventasTotal,
-      ahorro_generado: ahorro,
-      convenios_por_vencer: conveniosScope.filter((c) => c.estado && c.fecha_fin && new Date(c.fecha_fin) <= en30dias).length,
       convenios_activos: conveniosScope.filter((c) => c.estado).length,
+      bolsa_valor: cooperativaGes?.bolsa?.valor ?? 0,
+      bolsa_consumido: cooperativaGes?.bolsa?.consumido ?? 0,
       ventas_por_forma_de_pago: {
         tarjeta: ventasTarjeta,
         cupo: ventasCupo,

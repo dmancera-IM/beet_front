@@ -253,25 +253,31 @@ let asignaciones = [
 
 // Transacciones GES ↔ cooperativa (tabla `transacciones`, sección 11):
 // quién las hizo (usuario/administrador), con qué forma de pago y en qué
-// estado. `formaPago` y `estado` son puramente de demostración (Cupo/
-// Crédito, Pendiente/Completada) — no hay reglas financieras ni de
-// aprobación manual todavía. Solo existen estos dos estados: "Pendiente"
-// (la operación todavía no puede completarse, ej. no hay inventario
-// suficiente) y "Completada" (ya se realizó y el inventario correspondiente
-// fue asignado/vendido). Nunca "Aprobada"/"Rechazada"/"Disponible".
-// `prioridad` ('Normal' | 'Alta'): las de prioridad Alta vienen del nuevo
-// formulario B2B (sección 6/7 de la ronda de ajustes) — compra rápida de
-// una entidad. No es un estado nuevo de la transacción (`estado` sigue
-// siendo únicamente Pendiente/Completada); es solo una etiqueta adicional
-// para poder listarlas por separado en GES → B2B.
+// estado. `formaPago` solo puede ser "Bolsa" o "Crédito" — nunca "Cupo"
+// ni otro texto (ver definición de Bolsa/Crédito): representa con cuál de
+// los dos saldos independientes de la cooperativa se pagó. `estado` es
+// puramente de demostración (Pendiente/Completada) — no hay reglas
+// financieras ni de aprobación manual todavía. Solo existen estos dos
+// estados: "Pendiente" (la operación todavía no puede completarse, ej. no
+// hay inventario suficiente) y "Completada" (ya se realizó y el
+// inventario correspondiente fue asignado/vendido). Nunca "Aprobada"/
+// "Rechazada"/"Disponible". Importante: la falta de DINERO (bolsa/crédito
+// insuficiente) nunca debe llegar a crear una solicitud — eso se valida
+// ANTES, en la pantalla de compra (ver ComprarBonosGes.jsx/B2BForm.jsx);
+// "Pendiente" representa únicamente falta de INVENTARIO en Storage.
+// `prioridad` ('Normal' | 'Alta'): las de prioridad Alta vienen del
+// formulario B2B — compra rápida de una entidad. No es un estado nuevo de
+// la transacción (`estado` sigue siendo únicamente Pendiente/Completada);
+// es solo una etiqueta adicional para poder listarlas por separado en
+// GES → B2B.
 let solicitudes = [
-  { id: 'sol-1', cooperativaId: 1, productoId: 1, cantidad: 1000, estado: 'Completada', fecha: '2026-09-10', administrador: 'Carlos Gómez', formaPago: 'Cupo', prioridad: 'Normal' },
+  { id: 'sol-1', cooperativaId: 1, productoId: 1, cantidad: 1000, estado: 'Completada', fecha: '2026-09-10', administrador: 'Carlos Gómez', formaPago: 'Bolsa', prioridad: 'Normal' },
   { id: 'sol-2', cooperativaId: 2, productoId: 2, cantidad: 200, estado: 'Completada', fecha: '2026-08-15', administrador: 'Andrés Ruiz', formaPago: 'Crédito', prioridad: 'Normal' },
-  { id: 'sol-3', cooperativaId: 1, productoId: 3, cantidad: 200, estado: 'Pendiente', fecha: '2026-09-08', administrador: 'Carlos Gómez', formaPago: 'Cupo', prioridad: 'Normal' },
+  { id: 'sol-3', cooperativaId: 1, productoId: 3, cantidad: 200, estado: 'Pendiente', fecha: '2026-09-08', administrador: 'Carlos Gómez', formaPago: 'Bolsa', prioridad: 'Normal' },
   { id: 'sol-4', cooperativaId: 1, productoId: 4, cantidad: 150, estado: 'Pendiente', fecha: '2026-08-28', administrador: 'Carlos Gómez', formaPago: 'Crédito', prioridad: 'Normal' },
-  { id: 'sol-5', cooperativaId: 2, productoId: 1, cantidad: 300, estado: 'Completada', fecha: '2026-09-01', administrador: 'Andrés Ruiz', formaPago: 'Cupo', prioridad: 'Normal' },
+  { id: 'sol-5', cooperativaId: 2, productoId: 1, cantidad: 300, estado: 'Completada', fecha: '2026-09-01', administrador: 'Andrés Ruiz', formaPago: 'Bolsa', prioridad: 'Normal' },
   { id: 'sol-6', cooperativaId: 2, productoId: 3, cantidad: 50, estado: 'Completada', fecha: '2026-07-30', administrador: 'Andrés Ruiz', formaPago: 'Crédito', prioridad: 'Normal' },
-  { id: 'sol-7', cooperativaId: 1, productoId: 1, cantidad: 10, estado: 'Completada', fecha: '2026-09-15', administrador: 'Carlos Gómez', formaPago: 'Cupo', prioridad: 'Alta' },
+  { id: 'sol-7', cooperativaId: 1, productoId: 1, cantidad: 10, estado: 'Completada', fecha: '2026-09-15', administrador: 'Carlos Gómez', formaPago: 'Bolsa', prioridad: 'Alta' },
 ];
 
 // Usuarios administradores que GES creó directamente para una cooperativa
@@ -565,7 +571,7 @@ export function crearSolicitudDesdeCooperativa({ cooperativaId, productoId, cant
     estado,
     fecha: hoyISO(),
     administrador: administrador || 'Administrador',
-    formaPago: formaPago || 'Cupo',
+    formaPago: formaPago || 'Bolsa',
     prioridad: prioridad || 'Normal',
   };
   solicitudes.push(solicitud);

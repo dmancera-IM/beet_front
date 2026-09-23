@@ -59,7 +59,7 @@ export default function GesDashboard() {
                   <th>Convenio</th>
                   <th>Producto</th>
                   <th className="right">Disponible</th>
-                  <th className="right">Asignado</th>
+                  <th className="right">Vendidas</th>
                   <th className="right">Total</th>
                 </tr>
               </thead>

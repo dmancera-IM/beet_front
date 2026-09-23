@@ -6,7 +6,6 @@ import Modal from '../../../components/ui/Modal';
 import { Field, Input, Select } from '../../../components/ui/Field';
 import { IconBuscar, IconPlus } from '../../../components/ui/Icons';
 import { Pagination } from '../../../components/ui/Nav';
-import { StatusBadge } from '../../../components/ui/Badge';
 import { EmptyState } from '../../../components/ui/States';
 import { useTableState } from '../../../hooks/useTableState';
 import { formatCOP } from '../../../utils/format';
@@ -24,7 +23,7 @@ export default function CooperativasList() {
   const [, setVersion] = useState(0);
   const cooperativas = getCooperativas();
 
-  const { search, setSearch, filters, setFilter, pageRows, page, setPage, totalPages, total } = useTableState({
+  const { search, setSearch, pageRows, page, setPage, totalPages, total } = useTableState({
     data: cooperativas,
     searchFields: ['nombre'],
     pageSize: 10,
@@ -131,11 +130,6 @@ export default function CooperativasList() {
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
               <Input placeholder="Buscar entidad..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
-            <Select style={{ width: 160 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
-              <option value="">Todo estado</option>
-              <option value="Activa">Activa</option>
-              <option value="Inactiva">Inactiva</option>
-            </Select>
           </div>
         </div>
 
@@ -151,7 +145,6 @@ export default function CooperativasList() {
               <thead>
                 <tr>
                   <th>Entidad</th>
-                  <th>Estado</th>
                   <th className="right">Bolsa comprada</th>
                   <th className="right">Bolsa utilizada</th>
                   <th className="right">Crédito autorizado</th>
@@ -165,7 +158,6 @@ export default function CooperativasList() {
                 {pageRows.map((c) => (
                   <tr key={c.id}>
                     <td className="cell-primary">{c.nombre}</td>
-                    <td><StatusBadge status={c.estado} /></td>
                     <td className="right tabular">{formatCOP(c.bolsa.valor)}</td>
                     <td className="right tabular">{formatCOP(c.bolsa.consumido)}</td>
                     <td className="right tabular">{formatCOP(c.credito.cupoAutorizado)}</td>

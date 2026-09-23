@@ -93,9 +93,9 @@ export default function ComprarBonos() {
       <GesNav />
 
       <Card padding="card-pad-lg">
-        <form onSubmit={procesarCarga} style={{ maxWidth: 520 }}>
-          <div className="text-label" style={{ marginBottom: 4 }}>Archivo</div>
-          <p className="text-caption cell-muted" style={{ marginTop: 0, marginBottom: 12 }}>
+        <form onSubmit={procesarCarga} style={{ maxWidth: 520, margin: '0 auto' }}>
+          <div className="text-label" style={{ marginBottom: 4, textAlign: 'center' }}>Archivo</div>
+          <p className="text-caption cell-muted" style={{ marginTop: 0, marginBottom: 12, textAlign: 'center' }}>
             El Excel contiene los bonos/boletas que un proveedor le entregó a GES. Todavía no se procesa el contenido del
             archivo automáticamente — selecciona abajo a qué convenio/producto corresponde y cuántas unidades trae.
           </p>
@@ -140,7 +140,9 @@ export default function ComprarBonos() {
           </div>
 
 
-          <Button type="submit" loading={procesando}>Procesar carga</Button>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Button type="submit" loading={procesando}>Procesar carga</Button>
+          </div>
         </form>
 
         {resultado && (

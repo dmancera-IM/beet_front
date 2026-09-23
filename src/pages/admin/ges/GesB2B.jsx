@@ -1,5 +1,8 @@
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
+import { Input } from '../../../components/ui/Field';
+import { IconBuscar } from '../../../components/ui/Icons';
 import { EmptyState } from '../../../components/ui/States';
+import { useTableState } from '../../../hooks/useTableState';
 import GesNav from './GesNav';
 import SolicitudesTable from './SolicitudesTable';
 import { getSolicitudesB2B } from './gesData';
@@ -14,6 +17,15 @@ export default function GesB2B() {
 
   const solicitudes = getSolicitudesB2B();
 
+  // Mismo concepto de búsqueda que GES → Transacciones: solo administrador
+  // de cooperativa o cooperativa, nunca afiliados (esta tabla tampoco los
+  // tiene).
+  const { search, setSearch, pageRows, total } = useTableState({
+    data: solicitudes,
+    searchFields: ['cooperativaNombre', 'administrador'],
+    pageSize: 50,
+  });
+
   return (
     <div>
       <div className="page-header">
@@ -26,10 +38,23 @@ export default function GesB2B() {
       <GesNav />
 
       <div className="table-card">
-        {solicitudes.length === 0 ? (
-          <EmptyState title="Sin solicitudes B2B todavía" description="Las compras rápidas/prioritarias que hagan las entidades aparecerán aquí." />
+        <div className="table-toolbar">
+          <div className="table-toolbar-left">
+            <label className="input-affix-wrap" style={{ width: 280 }}>
+              <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
+              <Input placeholder="Buscar administrador o cooperativa..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </label>
+          </div>
+        </div>
+
+        {pageRows.length === 0 ? (
+          total === 0 ? (
+            <EmptyState title="Sin solicitudes B2B todavía" description="Las compras rápidas/prioritarias que hagan las entidades aparecerán aquí." />
+          ) : (
+            <EmptyState title="Sin solicitudes que coincidan" description="Ajusta el término de búsqueda." />
+          )
         ) : (
-          <SolicitudesTable solicitudes={solicitudes} />
+          <SolicitudesTable solicitudes={pageRows} />
         )}
       </div>
     </div>

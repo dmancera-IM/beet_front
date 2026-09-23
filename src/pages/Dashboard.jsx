@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../components/layout/breadcrumbs';
 import { KpiCard, Card } from '../components/ui/Card';
 import { ErrorState, LoadingState } from '../components/ui/States';
-import { IconWarningTriangle } from '../components/ui/Icons';
 import * as dashboardService from '../services/dashboardService';
 import * as reportesService from '../services/reportesService';
 import { formatCOP, formatDateTime } from '../utils/format';
@@ -81,14 +80,9 @@ export default function Dashboard() {
           delta="Otorgado por GES"
           deltaTone="neutral"
         />
-        <KpiCard
-          label="Convenios por vencer"
-          value={stats.convenios_por_vencer}
-          delta="Vigencia termina en los próximos 30 días"
-          deltaTone="warning"
-          icon={<IconWarningTriangle size={14} color="var(--warning)" />}
-        />
         <KpiCard label="Convenios activos" value={stats.convenios_activos} delta="En catálogo" deltaTone="neutral" />
+        <KpiCard label="Valor de la Bolsa" value={formatCOP(stats.bolsa_valor)} delta="Comprado a GES" deltaTone="neutral" />
+        <KpiCard label="Bolsa gastada" value={formatCOP(stats.bolsa_consumido)} delta="Consumido de la bolsa" deltaTone="neutral" />
       </div>
 
       <div className="grid grid-2 section-gap">

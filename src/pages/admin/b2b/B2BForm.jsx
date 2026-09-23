@@ -8,7 +8,17 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import * as convenioService from '../../../services/convenioService';
 import { formatCOP } from '../../../utils/format';
-import { PROVEEDORES, creditoDisponible, crearSolicitudDesdeCooperativa, getCooperativa, registrarConsumoCupo } from '../ges/gesData';
+import {
+  PROVEEDORES,
+  bolsaDisponible,
+  creditoDisponible,
+  crearSolicitudDesdeCooperativa,
+  getCooperativa,
+  registrarConsumoBolsa,
+  registrarConsumoCupo,
+} from '../ges/gesData';
+
+const FORMA_PAGO_LABEL = { BOLSA: 'Bolsa', CREDITO: 'Crédito' };
 
 // Número de soporte todavía no está definido en la configuración actual —
 // placeholder claramente identificado para reemplazarlo por el real más
@@ -33,11 +43,14 @@ export default function B2BForm() {
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [cargandoProducto, setCargandoProducto] = useState(false);
   const [cantidad, setCantidad] = useState('');
+  const [formaPago, setFormaPago] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [ultimaSolicitud, setUltimaSolicitud] = useState(null);
 
   const cooperativa = getCooperativa(cooperativaId);
-  const cupoDisponible = creditoDisponible(cooperativa?.credito);
+  const bolsaDisponibleNum = bolsaDisponible(cooperativa?.bolsa);
+  const creditoDisponibleNum = creditoDisponible(cooperativa?.credito);
+  const cupoDisponible = formaPago === 'BOLSA' ? bolsaDisponibleNum : creditoDisponibleNum;
 
   useEffect(() => {
     if (!proveedorId) return;
@@ -62,12 +75,12 @@ export default function B2BForm() {
   }, [productoId]);
 
   const valorCompra = productoSeleccionado?.precio_beet && cantidad ? productoSeleccionado.precio_beet * Number(cantidad) : 0;
-  const hayDatosSuficientes = productoSeleccionado && Number(cantidad) > 0;
+  const hayDatosSuficientes = productoSeleccionado && Number(cantidad) > 0 && formaPago !== '';
   const cupoAlcanza = hayDatosSuficientes && valorCompra <= cupoDisponible;
   const cupoInsuficiente = hayDatosSuficientes && valorCompra > cupoDisponible;
 
   const mensajeWhatsapp = encodeURIComponent(
-    `Hola, soy administrador de ${nombreEntidad}. Necesito ayuda con una compra B2B de ${cantidad || '—'} unidades de ${productoSeleccionado?.nombre ?? 'un producto'} (valor ${formatCOP(valorCompra)}). Mi cupo disponible actual es ${formatCOP(cupoDisponible)}.`
+    `Hola, soy administrador de ${nombreEntidad}. Necesito ayuda con una compra B2B de ${cantidad || '—'} unidades de ${productoSeleccionado?.nombre ?? 'un producto'} (valor ${formatCOP(valorCompra)}). Mi ${formaPago === 'BOLSA' ? 'saldo de bolsa' : 'crédito'} disponible actual es ${formatCOP(cupoDisponible)}.`
   );
 
   const confirmarCompra = () => {
@@ -78,12 +91,14 @@ export default function B2BForm() {
         productoId,
         cantidad: Number(cantidad),
         administrador: currentUser.nombre,
-        formaPago: 'Cupo',
+        formaPago: FORMA_PAGO_LABEL[formaPago],
         prioridad: 'Alta',
       });
-      registrarConsumoCupo(cooperativaId, valorCompra);
+      if (formaPago === 'BOLSA') registrarConsumoBolsa(cooperativaId, valorCompra);
+      else registrarConsumoCupo(cooperativaId, valorCompra);
       setUltimaSolicitud(solicitud);
       setCantidad('');
+      setFormaPago('');
       push({ title: 'Compra B2B procesada', description: `${solicitud.cantidad.toLocaleString('es-CO')} unidades · ${formatCOP(valorCompra)}` });
     } catch (err) {
       push({ title: 'No se pudo procesar la compra', description: err.message, variant: 'error' });
@@ -124,10 +139,17 @@ export default function B2BForm() {
           <Field label="Cantidad">
             <Input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} placeholder="10" />
           </Field>
+          <Field label="Forma de pago" hint={`Bolsa disponible: ${formatCOP(bolsaDisponibleNum)} · Crédito disponible: ${formatCOP(creditoDisponibleNum)}`}>
+            <Select value={formaPago} onChange={(e) => setFormaPago(e.target.value)}>
+              <option value="">Selecciona una forma de pago…</option>
+              <option value="BOLSA">Bolsa</option>
+              <option value="CREDITO">Crédito</option>
+            </Select>
+          </Field>
 
           {hayDatosSuficientes && !cargandoProducto && (
             <div style={{ background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-              <Row label="Cupo disponible" value={formatCOP(cupoDisponible)} />
+              <Row label={formaPago === 'BOLSA' ? 'Bolsa disponible' : 'Crédito disponible'} value={formatCOP(cupoDisponible)} />
               <Row label="Cantidad" value={`${Number(cantidad).toLocaleString('es-CO')} boletas`} />
               <Row label="Valor de la compra" value={formatCOP(valorCompra)} />
             </div>
@@ -135,12 +157,12 @@ export default function B2BForm() {
 
           {cupoAlcanza && (
             <Alert tone="success" title="Compra disponible para procesamiento rápido">
-              Tu cupo alcanza para esta compra. Puedes continuar de inmediato.
+              Tu {formaPago === 'BOLSA' ? 'bolsa alcanza' : 'crédito alcanza'} para esta compra. Puedes continuar de inmediato.
             </Alert>
           )}
           {cupoInsuficiente && (
-            <Alert tone="error" title="Cupo insuficiente para esta compra">
-              Tu cupo disponible ({formatCOP(cupoDisponible)}) no alcanza para el valor de esta compra ({formatCOP(valorCompra)}).
+            <Alert tone="error" title={formaPago === 'BOLSA' ? 'Saldo insuficiente en la Bolsa' : 'Crédito insuficiente para esta compra'}>
+              Tu {formaPago === 'BOLSA' ? 'saldo de bolsa' : 'crédito'} disponible ({formatCOP(cupoDisponible)}) no alcanza para el valor de esta compra ({formatCOP(valorCompra)}).
             </Alert>
           )}
 

@@ -17,7 +17,7 @@ export default function Reportes() {
   useSetBreadcrumbs([{ label: 'Reportes' }]);
   const { push } = useToast();
   const { necesitaSeleccion, selectedId, selected, isSuperAdmin } = useCooperativa();
-  const [filtros, setFiltros] = useState({ convenio: '', metodoPago: '', estado: '' });
+  const [filtros, setFiltros] = useState({ convenio: '', metodoPago: '' });
 
   const [stats, setStats] = useState(null);
   const [rendimiento, setRendimiento] = useState([]);
@@ -130,17 +130,11 @@ export default function Reportes() {
             <option value="TARJETA">Tarjeta</option>
             <option value="CUPO">Cupo</option>
           </Select>
-          <Select style={{ width: 150 }} value={filtros.estado} onChange={(e) => setFiltros((f) => ({ ...f, estado: e.target.value }))}>
-            <option value="">Todo estado</option>
-            <option value="PENDIENTE">Pendiente</option>
-            <option value="COMPLETADA">Completada</option>
-          </Select>
         </div>
       </Card>
 
       <div className="grid grid-kpi section-gap">
         <KpiCard label="Ventas del mes" value={formatCOP(stats.ventas_del_mes)} deltaTone="neutral" delta="Mes en curso" />
-        <KpiCard label="Ahorro generado" value={formatCOP(stats.ahorro_generado)} deltaTone="neutral" delta="Acumulado histórico" />
         <KpiCard label="Tarjeta vs. cupo" value={`${stats.ventas_por_forma_de_pago.pct_tarjeta}% / ${stats.ventas_por_forma_de_pago.pct_cupo}%`} deltaTone="neutral" delta="Distribución de ventas" />
         <KpiCard label="Convenios activos" value={stats.convenios_activos} deltaTone="neutral" delta="En catálogo" />
       </div>

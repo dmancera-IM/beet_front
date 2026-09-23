@@ -130,7 +130,7 @@ export default function Storage() {
                   <th>Convenio</th>
                   <th>Producto</th>
                   <th className="right">Disponibles</th>
-                  <th className="right">Asignados</th>
+                  <th className="right">Vendidas</th>
                   <th className="right">Total</th>
                   <th></th>
                 </tr>
@@ -166,7 +166,7 @@ export default function Storage() {
                 <div className="tabular" style={{ fontSize: 18, fontWeight: 600 }}>{detalle.disponible.toLocaleString('es-CO')}</div>
               </div>
               <div>
-                <div className="text-label">Asignado</div>
+                <div className="text-label">Vendidas</div>
                 <div className="tabular" style={{ fontSize: 18, fontWeight: 600 }}>{detalle.asignado.toLocaleString('es-CO')}</div>
               </div>
               <div>

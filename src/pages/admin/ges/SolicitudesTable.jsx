@@ -6,14 +6,15 @@ import { EmptyState } from '../../../components/ui/States';
 import { formatDate, formatCOP } from '../../../utils/format';
 import { getProducto } from './gesData';
 
-const FORMA_PAGO_TONE = { Cupo: 'blue', Crédito: 'amber' };
+const FORMA_PAGO_TONE = { Bolsa: 'green', Crédito: 'amber' };
 
 // Tabla de transacciones GES↔entidad, compartida entre GesTransacciones
 // (todas las entidades) y la pestaña "Transacciones" de CooperativaDetail
 // (una sola). Solo lectura — GES ya no aprueba/rechaza manualmente: solo
 // existen dos estados, "Pendiente" (todavía no se puede completar, ej. sin
 // inventario suficiente) y "Completada" (el inventario ya fue asignado/
-// vendido); `formaPago` es un valor de demostración.
+// vendido); `formaPago` solo puede ser "Bolsa" o "Crédito" (nunca "Cupo"
+// ni otro texto — ver gesData.js).
 export default function SolicitudesTable({ solicitudes, showCooperativa = true }) {
   const [detalle, setDetalle] = useState(null);
 

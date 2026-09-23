@@ -112,24 +112,26 @@ export default function CooperativaDetail() {
           mezclan en un único "cupo utilizado"/"cupo disponible" (ronda
           "Corrección visual de Bolsa/Crédito"). La bolsa es un monto que
           la entidad ya compró y va consumiendo; el crédito es un LÍMITE
-          que GES autoriza y la entidad solicita dentro de ese límite. */}
-      <Card padding="card-pad-lg" className="section-gap">
-        <div className="grid grid-2" style={{ gap: 20 }}>
-          <div>
-            <div className="text-label" style={{ marginBottom: 10 }}>Bolsa</div>
-            <Row label="Valor de la bolsa" value={formatCOP(cooperativa.bolsa.valor)} />
-            <Row label="Consumido" value={formatCOP(cooperativa.bolsa.consumido)} />
-            <Row label="Disponible" value={formatCOP(bolsaDisponible(cooperativa.bolsa))} />
+          que GES autoriza y la entidad solicita dentro de ese límite. Dos
+          Card independientes (no una sola dividida en columnas) para que
+          la separación sea visualmente inequívoca. */}
+      <div className="grid grid-2 section-gap">
+        <Card padding="card-pad-lg">
+          <div className="text-label" style={{ marginBottom: 12 }}>Bolsa</div>
+          <Row label="Valor de la bolsa" value={formatCOP(cooperativa.bolsa.valor)} />
+          <Row label="Consumido" value={formatCOP(cooperativa.bolsa.consumido)} />
+          <Row label="Disponible" value={formatCOP(bolsaDisponible(cooperativa.bolsa))} />
+        </Card>
+        <Card padding="card-pad-lg">
+          <div className="text-label" style={{ marginBottom: 12 }}>Crédito</div>
+          <Row label="Cupo autorizado por GES" value={formatCOP(cooperativa.credito.cupoAutorizado)} />
+          <Row label="Utilizado" value={formatCOP(cooperativa.credito.utilizado)} />
+          <Row label="Disponible" value={formatCOP(creditoDisponible(cooperativa.credito))} />
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-default)', display: 'flex', justifyContent: 'center' }}>
+            <Button variant="secondary" onClick={abrirModalCupo}>Aumentar cupo de crédito</Button>
           </div>
-          <div>
-            <div className="text-label" style={{ marginBottom: 10 }}>Crédito</div>
-            <Row label="Cupo autorizado por GES" value={formatCOP(cooperativa.credito.cupoAutorizado)} />
-            <Row label="Utilizado" value={formatCOP(cooperativa.credito.utilizado)} />
-            <Row label="Disponible" value={formatCOP(creditoDisponible(cooperativa.credito))} />
-            <Button variant="secondary" onClick={abrirModalCupo} style={{ marginTop: 8 }}>Aumentar cupo de crédito</Button>
-          </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
 
       <Card padding="card-pad-lg">
         <Tabs items={TABS} active={tab} onChange={setTab} />
