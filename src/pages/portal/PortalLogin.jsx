@@ -73,7 +73,7 @@ export default function PortalLogin() {
         </form>
 
         <div className="login-note text-caption">
-          ¿Tu cooperativa ya te registró? <Link to="/portal/registro" style={{ fontWeight: 600 }}>Activa tu cuenta</Link>.
+          ¿Tu entidad ya te registró? <Link to="/portal/registro" style={{ fontWeight: 600 }}>Activa tu cuenta</Link>.
         </div>
       </div>
     </div>

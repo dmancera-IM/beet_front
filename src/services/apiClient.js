@@ -14,6 +14,13 @@
 // the real PostgreSQL model.
 
 import * as db from "./mockDb";
+// Lectura puntual y deliberada del mock de GES (pages/admin/ges/gesData.js)
+// desde el mock del panel de cooperativa — igual que el resto de
+// excepciones ya documentadas (ver mockDb.js `precioGesEntidadDe`): el
+// dashboard de la entidad necesita su modalidad de compra (Bolsa/Crédito),
+// el valor de cupo disponible con GES, y cuánto Storage comprado le queda
+// por convenio — datos que solo existen en el mock de GES.
+import { creditoDisponible, getAsignacionesPorCooperativa, getCooperativa } from "../pages/admin/ges/gesData";
 
 const ADMIN_TOKEN_KEY = "beetticket_admin_token";
 const AFILIADO_TOKEN_KEY = "beetticket_afiliado_token";
@@ -114,8 +121,12 @@ function afiliadoConCooperativaOut(a) {
 // "convenio" — ver FRONTEND_DB_ALIGNMENT.md) tal como lo consume la UI del
 // administrador: precio_normal/precio_beet, vigencia y estado ya viven en
 // esta fila; el nombre/convenio maestro se copia como snapshot.
+// `puede_activarse`: true cuando al menos un producto de este convenio ya
+// tiene el porcentaje de ganancia configurado (sección 2 de la ronda de
+// ajustes) — la UI usa esto para deshabilitar el switch de activación
+// hasta que exista esa configuración previa.
 function cooperativaConvenioOut(cc) {
-  return cc;
+  return { ...cc, puede_activarse: db.convenioListoParaActivar(cc) };
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +167,78 @@ function fakePdfBlob(titulo = "BEET Ticket - documento de muestra") {
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 320 160]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+4 0 obj<</Length ${stream.length}>>stream
+${stream}
+endstream
+endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+trailer<</Size 6/Root 1 0 R>>
+%%EOF`;
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+// PDF del ticket del afiliado — a diferencia de `fakePdfBlob`, este SÍ
+// dibuja un QR y un código de barras (ver sección "Vista web sin QR/
+// código de barras, PDF con ambos"): la vista web (TicketCard.jsx) nunca
+// los muestra, pero el PDF descargado siempre los incluye, dibujados con
+// simples rectángulos PDF (sin librerías nuevas) — un patrón determinista
+// a partir del código del ticket, no un QR/código de barras real y
+// escaneable, pero visualmente presente en el documento tal como pide la
+// definición funcional.
+function fakeTicketPdfBlob({ codigo, convenioNombre, productoNombre, estadoLabel, fechaVencimiento }) {
+  const lineas = [
+    "BEET Ticket",
+    convenioNombre,
+    productoNombre,
+    `Codigo: ${codigo}`,
+    estadoLabel ? `Estado: ${estadoLabel}` : null,
+    fechaVencimiento ? `Vence: ${fechaVencimiento}` : null,
+  ].filter(Boolean);
+
+  let stream = "";
+  let y = 390;
+  lineas.forEach((linea) => {
+    const seguro = String(linea).replace(/[()\\]/g, " ").slice(0, 60);
+    stream += `BT /F1 14 Tf 24 ${y} Td (${seguro}) Tj ET\n`;
+    y -= 20;
+  });
+
+  stream += "0 0 0 rg\n";
+
+  // Código de barras: franjas verticales de ancho variable (mismo patrón
+  // visual que ya usaba la tarjeta web, ahora solo aquí en el PDF).
+  let barX = 24;
+  const barY = 230;
+  const barHeight = 50;
+  for (let i = 0; i < 28; i++) {
+    const ancho = i % 3 === 0 ? 3.5 : 1.6;
+    stream += `${barX.toFixed(1)} ${barY} ${ancho} ${barHeight} re f\n`;
+    barX += ancho + 3;
+  }
+
+  // QR: cuadrícula de celdas, patrón determinista a partir del código del
+  // ticket (mismo código siempre genera el mismo "QR").
+  const gridSize = 14;
+  const cell = 8;
+  const qrX = 24;
+  const qrY = 40;
+  let seed = 0;
+  for (const ch of String(codigo)) seed += ch.charCodeAt(0);
+  for (let row = 0; row < gridSize; row++) {
+    for (let col = 0; col < gridSize; col++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      if (seed % 2 === 0) {
+        const x = qrX + col * cell;
+        const yPos = qrY + row * cell;
+        stream += `${x} ${yPos} ${cell - 1} ${cell - 1} re f\n`;
+      }
+    }
+  }
+
+  const pdf = `%PDF-1.1
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 320 420]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
 4 0 obj<</Length ${stream.length}>>stream
 ${stream}
 endstream
@@ -294,7 +377,7 @@ async function handle(method, fullPath, body) {
   if (is("api", "auth", "afiliado", "login") && method === "POST") {
     const afiliado = db.afiliados.find((a) => a.correo.toLowerCase() === String(body.correo || "").trim().toLowerCase());
     if (!afiliado) throw new ApiError("Credenciales incorrectas.", 401, "Credenciales incorrectas.");
-    if (!afiliado.estado) throw new ApiError("Tu cuenta está inactiva. Contacta a tu cooperativa.", 403, "Afiliado inactivo.");
+    if (!afiliado.estado) throw new ApiError("Tu cuenta está inactiva. Contacta a tu entidad.", 403, "Afiliado inactivo.");
     return { access_token: `afiliado:${afiliado.id}`, afiliado: afiliadoConCooperativaOut(afiliado) };
   }
   if (is("api", "auth", "afiliado", "me") && method === "GET") return afiliadoConCooperativaOut(currentAfiliado());
@@ -357,7 +440,7 @@ async function handle(method, fullPath, body) {
   }
   if (is("api", "admin", "cooperativas") && method === "POST") {
     currentAdmin();
-    if (db.cooperativas.some((c) => c.nit === body.nit)) throw new ApiError("Ya existe una cooperativa con ese NIT.", 409, "NIT duplicado.");
+    if (db.cooperativas.some((c) => c.nit === body.nit)) throw new ApiError("Ya existe una entidad con ese NIT.", 409, "NIT duplicado.");
     const coop = { id: db.newId("cooperativa"), nombre: body.nombre, nit: body.nit, estado: true, fecha_creacion: db.dateOnly() };
     db.cooperativas.push(coop);
     return coop;
@@ -365,17 +448,17 @@ async function handle(method, fullPath, body) {
   if (is("api", "admin", "cooperativa") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    if (!scope) throw new ApiError("Selecciona una cooperativa.", 400, "Sin cooperativa seleccionada.");
+    if (!scope) throw new ApiError("Selecciona una entidad.", 400, "Sin entidad seleccionada.");
     const coop = db.cooperativas.find((c) => c.id === scope);
-    if (!coop) throw new ApiError("Cooperativa no encontrada.", 404, "No encontrada.");
+    if (!coop) throw new ApiError("Entidad no encontrada.", 404, "No encontrada.");
     return coop;
   }
   if (is("api", "admin", "cooperativa") && method === "PATCH") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    if (!scope) throw new ApiError("Selecciona una cooperativa.", 400, "Sin cooperativa seleccionada.");
+    if (!scope) throw new ApiError("Selecciona una entidad.", 400, "Sin entidad seleccionada.");
     const coop = db.cooperativas.find((c) => c.id === scope);
-    if (!coop) throw new ApiError("Cooperativa no encontrada.", 404, "No encontrada.");
+    if (!coop) throw new ApiError("Entidad no encontrada.", 404, "No encontrada.");
     Object.assign(coop, body);
     return coop;
   }
@@ -390,13 +473,19 @@ async function handle(method, fullPath, body) {
   if (is("api", "afiliados") && method === "GET") {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
-    let rows = db.afiliados.filter((a) => a.id_cooperativa === scope);
+    // SUPER_ADMIN sin entidad seleccionada: información GLOBAL de todas las
+    // entidades (sección 9 de la ronda de ajustes) — antes esto devolvía
+    // una lista vacía (ningún afiliado tiene id_cooperativa null). Sigue
+    // siendo de solo lectura: crear/editar/eliminar exige seleccionar una
+    // entidad primero (ver AfiliadosList.jsx).
+    const esGlobal = admin.rol === "SUPER_ADMIN" && !scope;
+    let rows = esGlobal ? db.afiliados : db.afiliados.filter((a) => a.id_cooperativa === scope);
     const estado = q.get("estado");
     if (estado) rows = rows.filter((a) => String(a.estado) === estado);
     const term = (q.get("q") || "").trim().toLowerCase();
     if (term) rows = rows.filter((a) => `${a.nombres} ${a.apellidos} ${a.documento} ${a.correo}`.toLowerCase().includes(term));
     const page = paginate(rows, q);
-    return { ...page, items: page.items.map(afiliadoOut) };
+    return { ...page, items: page.items.map(esGlobal ? afiliadoConCooperativaOut : afiliadoOut) };
   }
   if (is("api", "afiliados", "me") && method === "GET") return afiliadoConCooperativaOut(currentAfiliado());
   if (is("api", "afiliados", "me") && method === "PATCH") {
@@ -419,7 +508,7 @@ async function handle(method, fullPath, body) {
     const admin = currentAdmin();
     const scope = resolveScope(admin);
     if (db.afiliados.some((a) => a.id_cooperativa === scope && a.documento === body.documento)) {
-      throw new ApiError("Ya existe un afiliado con ese documento en esta cooperativa.", 409, "Documento duplicado.");
+      throw new ApiError("Ya existe un afiliado con ese documento en esta entidad.", 409, "Documento duplicado.");
     }
     const afiliado = { id: db.newId("afiliado"), estado: true, ...body, id_cooperativa: scope };
     db.afiliados.push(afiliado);
@@ -480,16 +569,22 @@ async function handle(method, fullPath, body) {
     return paginate(rows.map(cooperativaConvenioOut), q);
   }
   if (is("api", "convenios") && method === "POST") {
-    // Crea (activa) un convenio del catálogo maestro de GES para esta
-    // cooperativa — nunca un convenio "inventado" fuera del catálogo (ver
-    // sección 9/11 de FRONTEND_DB_ALIGNMENT.md).
+    // Crea (adquiere) un convenio del catálogo maestro de GES para esta
+    // entidad — nunca un convenio "inventado" fuera del catálogo (ver
+    // sección 9/11 de FRONTEND_DB_ALIGNMENT.md). Llega SIEMPRE DESACTIVADO
+    // (sección 2 de la ronda de ajustes): todavía falta configurar el
+    // porcentaje de ganancia de al menos un producto antes de poder
+    // activarlo — `estado` nunca se acepta en la creación, sin importar lo
+    // que envíe el cliente.
     const admin = currentAdmin();
     const scope = resolveScope(admin);
     const idConvenio = body.id_convenio ?? db.conveniosCatalogo.find((c) => c.nombre === body.nombre)?.id ?? null;
+    const { estado, precio_normal, precio_beet, ...resto } = body;
+    void estado; void precio_normal; void precio_beet;
     const cc = {
       id: db.newId("cooperativaConvenio"), id_cooperativa: scope, id_convenio: idConvenio,
       plantilla_en_uso: null, imagen_marca_url: null, descripcion: null,
-      ...body, precio_normal: body.precio_normal ?? 0, precio_beet: body.precio_beet ?? 0,
+      ...resto, precio_normal: 0, precio_beet: 0, estado: false,
     };
     db.cooperativasConvenios.push(cc);
     return cooperativaConvenioOut(cc);
@@ -509,6 +604,27 @@ async function handle(method, fullPath, body) {
     currentAdmin();
     const cc = db.cooperativasConvenios.find((c) => c.id === idAt(2));
     if (!cc) throw new ApiError("Convenio no encontrado.", 404, "No encontrado.");
+    // Compuerta de activación (sección 2): no se puede activar un convenio
+    // hasta que al menos uno de sus productos tenga el porcentaje de
+    // ganancia configurado (precio calculado). No aplica al desactivar.
+    if (body.estado === true && !db.convenioListoParaActivar(cc)) {
+      throw new ApiError(
+        "Configura el porcentaje de ganancia de al menos un producto antes de activar este convenio.",
+        422,
+        "Convenio sin productos configurados."
+      );
+    }
+    // Ganancia de la entidad para TODO el convenio (sección 1 de "Ganancia
+    // por convenio y precios por producto"): únicos valores permitidos
+    // 5/10/15 — nunca un porcentaje libre ni por producto. Se aplica con
+    // `setGananciaConvenio` (no con Object.assign directo) porque valida el
+    // rango permitido.
+    if (Object.prototype.hasOwnProperty.call(body, "porcentaje_ganancia_entidad")) {
+      db.setGananciaConvenio(cc.id, body.porcentaje_ganancia_entidad);
+      const { porcentaje_ganancia_entidad, ...resto } = body;
+      void porcentaje_ganancia_entidad;
+      body = resto;
+    }
     if (Object.prototype.hasOwnProperty.call(body, "plantilla_catalogo_clave")) {
       const clave = body.plantilla_catalogo_clave;
       const catalogo = clave ? db.catalogoPlantillas.find((c) => c.clave === clave) : null;
@@ -534,6 +650,7 @@ async function handle(method, fullPath, body) {
     const scope = resolveScope(admin);
     const idConvenio = q.get("id_convenio");
     const productos = db.productosConvenio.filter((p) => p.id_convenio === idConvenio);
+    const cc = db.cooperativasConvenios.find((c) => c.id_cooperativa === scope && c.id_convenio === idConvenio);
     return productos.map((p) => {
       const cp = db.cooperativaProductoDe(scope, p.id);
       const resumen = db.resumenInventarioDe(p.id);
@@ -542,8 +659,10 @@ async function handle(method, fullPath, body) {
         nombre: p.nombre,
         descripcion_base: p.descripcion,
         disponible: resumen.disponible,
-        configurado: !!cp,
-        precio_beet: cp?.precio_beet ?? null,
+        configurado: db.cooperativaProductoConfigurado(scope, p.id),
+        precio_beet: db.precioBeetDe(scope, p.id),
+        precio_ges_entidad: db.precioGesEntidadDe(p.id),
+        porcentaje_ganancia_entidad: cc?.porcentaje_ganancia_entidad ?? null,
         precio_normal: cp?.precio_normal ?? null,
         fecha_inicio: cp?.fecha_inicio ?? null,
         fecha_fin: cp?.fecha_fin ?? null,
@@ -557,15 +676,19 @@ async function handle(method, fullPath, body) {
     const scope = resolveScope(admin);
     const producto = db.productoDe(idAt(2));
     if (!producto) throw new ApiError("Producto no encontrado.", 404, "No encontrado.");
+    const cc = db.cooperativasConvenios.find((c) => c.id_cooperativa === scope && c.id_convenio === producto.id_convenio);
     const cp = db.cooperativaProductoDe(scope, producto.id);
     const resumen = db.resumenInventarioDe(producto.id);
     return {
       id_producto: producto.id,
       nombre: producto.nombre,
       descripcion_base: producto.descripcion,
+      convenio_nombre: cc?.nombre ?? null,
       disponible: resumen.disponible,
-      configurado: !!cp,
-      precio_beet: cp?.precio_beet ?? null,
+      configurado: db.cooperativaProductoConfigurado(scope, producto.id),
+      precio_beet: db.precioBeetDe(scope, producto.id),
+      precio_ges_entidad: db.precioGesEntidadDe(producto.id),
+      porcentaje_ganancia_entidad: cc?.porcentaje_ganancia_entidad ?? null,
       precio_normal: cp?.precio_normal ?? null,
       fecha_inicio: cp?.fecha_inicio ?? null,
       fecha_fin: cp?.fecha_fin ?? null,
@@ -578,8 +701,19 @@ async function handle(method, fullPath, body) {
     const scope = resolveScope(admin);
     const producto = db.productoDe(idAt(2));
     if (!producto) throw new ApiError("Producto no encontrado.", 404, "No encontrado.");
+    const cc = db.cooperativasConvenios.find((c) => c.id_cooperativa === scope && c.id_convenio === producto.id_convenio);
     const cp = db.upsertCooperativaProducto(scope, producto.id, body);
-    return { ...cp, nombre: producto.nombre, descripcion_base: producto.descripcion, disponible: db.resumenInventarioDe(producto.id).disponible, configurado: true };
+    return {
+      ...cp,
+      nombre: producto.nombre,
+      descripcion_base: producto.descripcion,
+      convenio_nombre: cc?.nombre ?? null,
+      disponible: db.resumenInventarioDe(producto.id).disponible,
+      configurado: db.cooperativaProductoConfigurado(scope, producto.id),
+      precio_beet: db.precioBeetDe(scope, producto.id),
+      precio_ges_entidad: db.precioGesEntidadDe(producto.id),
+      porcentaje_ganancia_entidad: cc?.porcentaje_ganancia_entidad ?? null,
+    };
   }
 
   // ---- CUPOS ----------------------------------------------------------
@@ -638,6 +772,26 @@ async function handle(method, fullPath, body) {
     }, 0);
     const en30dias = new Date();
     en30dias.setDate(en30dias.getDate() + 30);
+
+    // Capacidad de compra de la entidad (sección "Ahorro generado" del
+    // dashboard) — mismo cupo de crédito con GES que ya se ve en
+    // GES → Entidades y en el panorama de Súper admin, nunca un valor
+    // independiente. La bolsa es un monto que la entidad compra bajo
+    // demanda (no un saldo corriente), así que este KPI usa el cupo de
+    // crédito, que sí es un saldo disponible.
+    const cooperativaGes = scope ? getCooperativa(scope) : null;
+
+    // Inventario restante por convenio (sección "Cupo consumido de
+    // afiliados" del dashboard, reemplazada): % de bonos/boletas que la
+    // entidad todavía tiene disponibles de cada convenio que ya compró,
+    // usando el mismo acumulado de Storage que ya se ve en GES.
+    const inventarioRestantePorConvenio = scope
+      ? getAsignacionesPorCooperativa(scope).map((a) => ({
+          convenio_nombre: a.proveedorNombre,
+          pct_restante: a.cantidad ? Math.round((a.disponibles / a.cantidad) * 100) : 0,
+        }))
+      : [];
+
     return {
       ventas_del_mes: ventasTotal,
       ahorro_generado: ahorro,
@@ -650,6 +804,8 @@ async function handle(method, fullPath, body) {
         pct_cupo: ventasTotal ? Math.round((ventasCupo / ventasTotal) * 100) : 0,
       },
       unidades_proximas_a_vencer: 0,
+      valor_disponible_compra: creditoDisponible(cooperativaGes?.credito),
+      inventario_restante_por_convenio: inventarioRestantePorConvenio,
     };
   }
 
@@ -796,12 +952,15 @@ async function handle(method, fullPath, body) {
           const trx = db.transacciones.filter((t) => t.id_producto === producto.id && t.estado === "COMPLETADA");
           const unidadesVendidas = trx.reduce((s, t) => s + t.cantidad, 0);
           const ingresos = trx.reduce((s, t) => s + t.total, 0);
-          const entregadas = resumen.entregada || 1;
           return {
             convenio_id: producto.id, convenio_nombre: `${cc.nombre} · ${producto.nombre}`,
             unidades_vendidas: unidadesVendidas, ingresos,
             disponible: resumen.disponible, entregada: resumen.entregada,
-            tasa_redencion: Math.round((resumen.entregada / entregadas) * 100),
+            // "Tasa de redención" ahora muestra el porcentaje de ganancia
+            // configurado para el convenio (ADMIN → Convenios) — ya no un
+            // cálculo de redención independiente (BEET no controla la
+            // redención del bono ante el proveedor).
+            tasa_redencion: cc.porcentaje_ganancia_entidad ?? 0,
           };
         })
       );
@@ -831,7 +990,20 @@ async function handle(method, fullPath, body) {
   if (is("api", "tickets", "me", "*", "descarga") && method === "GET") {
     const afiliado = currentAfiliado();
     const ticket = db.tickets.find((t) => t.id === idAt(3) && t.afiliado_id === afiliado.id);
-    return { __blob: fakePdfBlob(ticket?.codigo ?? "Ticket BEET") };
+    if (!ticket) throw new ApiError("Ticket no encontrado.", 404, "No encontrado.");
+    const producto = db.productoDe(ticket.id_producto);
+    const cc = producto ? db.cooperativaConvenioDeProducto(producto, afiliado.id_cooperativa) : null;
+    const cp = producto ? db.cooperativaProductoDe(afiliado.id_cooperativa, producto.id) : null;
+    const ESTADO_LABEL = { ENTREGADA: "Activo", VENCIDA: "Vencido" };
+    return {
+      __blob: fakeTicketPdfBlob({
+        codigo: ticket.codigo,
+        convenioNombre: cc?.nombre ?? null,
+        productoNombre: producto?.nombre ?? null,
+        estadoLabel: ESTADO_LABEL[ticket.estado] ?? ticket.estado,
+        fechaVencimiento: cp?.fecha_fin ?? null,
+      }),
+    };
   }
 
   // ---- TRANSACCIONES (compra del afiliado) -------------------------------

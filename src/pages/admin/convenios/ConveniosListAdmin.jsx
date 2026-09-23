@@ -15,6 +15,9 @@ import { ApiError } from '../../../services/apiClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
+// Porcentajes de ganancia permitidos para un convenio: de 5% en 5% hasta 50%.
+const PORCENTAJES_GANANCIA = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+
 // Vista de Convenios para ADMIN (sección 10 de la definición funcional):
 // GES mantiene el catálogo maestro (convenio → productos); ADMIN solo
 // elige qué convenios usa su cooperativa (switch activar/desactivar) y ve
@@ -74,7 +77,6 @@ export default function ConveniosListAdmin() {
     data: convenios,
     searchFields: ['nombre', 'id'],
     pageSize: 10,
-    defaultFilters: { estado: true },
   });
 
   const handleExport = async () => {
@@ -97,8 +99,31 @@ export default function ConveniosListAdmin() {
     }
   };
 
+  // Ganancia de la entidad para TODO el convenio (sección 1 de "Ganancia
+  // por convenio y precios por producto"): únicos valores permitidos
+  // 5/10/15, nunca por producto — todos los productos del convenio la
+  // heredan automáticamente (ver services/mockDb.js `precioBeetDe`).
+  const [guardandoGanancia, setGuardandoGanancia] = useState(null);
+
+  const cambiarGanancia = async (convenio, porcentaje) => {
+    setGuardandoGanancia(convenio.id);
+    try {
+      const actualizado = await convenioService.actualizarConvenio(convenio.id, { porcentaje_ganancia_entidad: Number(porcentaje) });
+      setConvenios((prev) => prev.map((c) => (c.id === convenio.id ? actualizado : c)));
+      push({ title: 'Ganancia actualizada', description: `${convenio.nombre}: ${porcentaje}% — todos sus productos la heredan.` });
+    } catch (err) {
+      push({ title: 'No se pudo actualizar la ganancia', description: err.message, variant: 'error' });
+    } finally {
+      setGuardandoGanancia(null);
+    }
+  };
+
   const toggleEstado = async (convenio) => {
     const nuevoEstado = !convenio.estado;
+    if (nuevoEstado && !convenio.puede_activarse) {
+      push({ title: 'Configura el porcentaje de ganancia primero', description: `${convenio.nombre}: entra al detalle y configura al menos un producto antes de activarlo.`, variant: 'error' });
+      return;
+    }
     try {
       const actualizado = await convenioService.actualizarConvenio(convenio.id, { estado: nuevoEstado });
       setConvenios((prev) => prev.map((c) => (c.id === convenio.id ? actualizado : c)));
@@ -131,11 +156,11 @@ export default function ConveniosListAdmin() {
     setGuardandoCatalogo(true);
     try {
       await Promise.all(
-        seleccionados.map((p) => convenioService.crearConvenio({ id_convenio: p.id, nombre: p.nombre, estado: true }))
+        seleccionados.map((p) => convenioService.crearConvenio({ id_convenio: p.id, nombre: p.nombre }))
       );
       push({
-        title: seleccionados.length === 1 ? 'Convenio agregado' : 'Convenios agregados',
-        description: `${seleccionados.map((p) => p.nombre).join(', ')} — configura precio y vigencia por producto desde el detalle del convenio.`,
+        title: seleccionados.length === 1 ? 'Convenio agregado (desactivado)' : 'Convenios agregados (desactivados)',
+        description: `${seleccionados.map((p) => p.nombre).join(', ')} — configura el porcentaje de ganancia de al menos un producto para poder activarlo.`,
       });
       setCatalogoOpen(false);
       cargar();
@@ -151,7 +176,7 @@ export default function ConveniosListAdmin() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Convenios</h1>
-          <p className="page-subtitle">Convenios que tu cooperativa activó desde el catálogo maestro de GES, con su inventario disponible.</p>
+          <p className="page-subtitle">Convenios que tu entidad activó desde el catálogo maestro de GES, con su inventario disponible.</p>
         </div>
         <div className="page-header-actions">
           <PermissionGate>
@@ -196,6 +221,7 @@ export default function ConveniosListAdmin() {
                 <tr>
                   <th>Convenio</th>
                   <th className="right">Inventario disponible</th>
+                  <th>Ganancia de la entidad</th>
                   <th>Estado</th>
                   <th></th>
                 </tr>
@@ -210,11 +236,36 @@ export default function ConveniosListAdmin() {
                       </td>
                       <td className="right tabular">{disponible == null ? '—' : `${disponible} unidades`}</td>
                       <td>
-                        <PermissionGate fallback={<Switch label={c.estado ? 'Activo' : 'Inactivo'} checked={c.estado} disabled />}>
-                          <Switch label={c.estado ? 'Activo' : 'Inactivo'} checked={c.estado} onChange={() => toggleEstado(c)} />
+                        <PermissionGate fallback={<span className="text-small">{c.porcentaje_ganancia_entidad != null ? `${c.porcentaje_ganancia_entidad}%` : 'Sin configurar'}</span>}>
+                          <Select
+                            style={{ width: 100 }}
+                            value={c.porcentaje_ganancia_entidad ?? ''}
+                            disabled={guardandoGanancia === c.id}
+                            onChange={(e) => cambiarGanancia(c, e.target.value)}
+                          >
+                            <option value="" disabled>Elegir</option>
+                            {PORCENTAJES_GANANCIA.map((p) => (
+                              <option key={p} value={p}>{p}%</option>
+                            ))}
+                          </Select>
                         </PermissionGate>
                       </td>
-                      <td className="right"><Link to={`${base}/convenios/${c.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver detalle</Link></td>
+                      <td>
+                        <PermissionGate fallback={<Switch label={c.estado ? 'Activo' : 'Inactivo'} checked={c.estado} disabled />}>
+                          <Switch
+                            label={c.estado ? 'Activo' : 'Inactivo'}
+                            checked={c.estado}
+                            onChange={() => toggleEstado(c)}
+                            disabled={!c.estado && !c.puede_activarse}
+                            title={!c.estado && !c.puede_activarse ? 'Configura el porcentaje de ganancia de un producto antes de activar' : undefined}
+                          />
+                        </PermissionGate>
+                      </td>
+                      <td className="right">
+                        <Link to={`${base}/convenios/${c.id}`} style={{ fontSize: 13, fontWeight: 600 }}>
+                          {!c.estado && !c.puede_activarse ? 'Configurar' : 'Ver detalle'}
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })}

@@ -1,11 +1,14 @@
 import { NavLink } from 'react-router-dom';
-import { IconDashboard, IconGrid, IconCupos, IconAfiliados, IconRedencion } from '../ui/Icons';
+import { IconDashboard, IconGrid, IconAfiliados, IconRedencion, IconBell } from '../ui/Icons';
 
+// El cupo ya no tiene una vista propia — se consulta directamente en
+// Inicio (ver PortalHome.jsx), así que "Cupo" se quitó de la navegación
+// sin reemplazarlo por ningún otro ítem.
 const ITEMS = [
   { to: '/portal', label: 'Inicio', icon: IconDashboard, end: true },
   { to: '/portal/catalogo', label: 'Beneficios', icon: IconGrid },
   { to: '/portal/tickets', label: 'Tickets', icon: IconRedencion },
-  { to: '/portal/cupo', label: 'Cupo', icon: IconCupos },
+  { to: '/portal/notificaciones', label: 'Alertas', icon: IconBell },
   { to: '/portal/perfil', label: 'Perfil', icon: IconAfiliados },
 ];
 

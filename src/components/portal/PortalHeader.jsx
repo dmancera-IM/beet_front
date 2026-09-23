@@ -8,12 +8,16 @@ import { ConfirmDialog } from '../ui/Modal';
 import { IconLogout } from '../ui/Icons';
 import { formatCOP } from '../../utils/format';
 import { useMiCupo } from '../../hooks/useMiCupo';
+import { getLogo } from '../../services/logoStore';
 
+// El cupo ya no tiene una vista propia — se consulta directamente en
+// Inicio (ver PortalHome.jsx), así que "Mi cupo" se quitó de la
+// navegación sin reemplazarlo por ningún otro ítem.
 const NAV_LINKS = [
   { to: '/portal', label: 'Inicio', end: true },
   { to: '/portal/catalogo', label: 'Beneficios' },
   { to: '/portal/tickets', label: 'Mis tickets' },
-  { to: '/portal/cupo', label: 'Mi cupo' },
+  { to: '/portal/notificaciones', label: 'Notificaciones' },
   { to: '/portal/perfil', label: 'Mi perfil' },
 ];
 
@@ -26,12 +30,23 @@ export default function PortalHeader() {
 
   const nombreCompleto = afiliado ? `${afiliado.nombres} ${afiliado.apellidos}` : '';
   const confirmarCierreSesion = () => { logout(); navigate('/portal/login'); };
+  // Logo de la entidad del afiliado autenticado (sección 5 de la ronda de
+  // ajustes) — adicional al de BEET, nunca lo reemplaza. Cada entidad tiene
+  // el suyo (guardado por su id en logoStore, ver Configuración → ADMIN);
+  // si no configuró ninguno, solo se ve el logo de BEET.
+  const logoEntidad = getLogo(afiliado?.cooperativa_id);
 
   return (
     <header className="portal-header">
       <div className="portal-header-inner">
-        <NavLink to="/portal" className="portal-logo">
+        <NavLink to="/portal" className="portal-logo" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img src={logo} alt="BEET Ticket" height={34} />
+          {logoEntidad && (
+            <>
+              <span aria-hidden="true" style={{ width: 1, height: 24, background: 'var(--border-default)' }} />
+              <img src={logoEntidad} alt={afiliado?.cooperativa_nombre ?? 'Logo de tu entidad'} height={28} style={{ maxWidth: 90, objectFit: 'contain' }} />
+            </>
+          )}
         </NavLink>
 
         <nav className="portal-header-nav">
@@ -61,7 +76,10 @@ export default function PortalHeader() {
               items={[
                 { label: 'Mi perfil', onClick: () => navigate('/portal/perfil') },
                 { label: 'Mis tickets', onClick: () => navigate('/portal/tickets') },
-                { label: 'Mi cupo', onClick: () => navigate('/portal/cupo') },
+                { label: 'Notificaciones', onClick: () => navigate('/portal/notificaciones') },
+                // El cupo ya no tiene vista propia — se ve en el bloque de
+                // cupo de Inicio (ver PortalHome.jsx).
+                { label: 'Mi cupo', onClick: () => navigate('/portal') },
                 { divider: true },
                 { label: 'Cerrar sesión', danger: true, onClick: () => setConfirmLogoutOpen(true) },
               ]}

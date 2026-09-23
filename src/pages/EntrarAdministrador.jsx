@@ -14,10 +14,10 @@ import { useAuth } from '../context/AuthContext';
 // quien determine el rol y la cooperativa a partir de las credenciales
 // reales, no una selección manual.
 const OPCIONES = [
-  { value: 'GES', label: 'GES', descripcion: 'Storage central, cooperativas y transacciones globales.', correo: 'ges@beetticket.com', to: '/ges' },
-  { value: 'SUPER_ADMIN', label: 'Super Admin', descripcion: 'Vista panorámica de todo BEET: todas las cooperativas y GES.', correo: 'superadmin@beetticket.com', to: '/super-admin/panorama' },
-  { value: 'ADMIN', label: 'Administrador', descripcion: 'Panel completo de su propia cooperativa (Cooperativa Bienestar).', correo: 'admin@beetticket.com', to: '/admin' },
-  { value: 'LECTOR', label: 'Lector', descripcion: 'Solo lectura de su propia cooperativa (Cooperativa Bienestar).', correo: 'lector@beetticket.com', to: '/lector' },
+  { value: 'GES', label: 'GES', descripcion: 'Storage central, entidades y transacciones globales.', correo: 'ges@beetticket.com', to: '/ges' },
+  { value: 'SUPER_ADMIN', label: 'Super Admin', descripcion: 'Vista panorámica de todo BEET: todas las entidades y GES.', correo: 'superadmin@beetticket.com', to: '/super-admin/panorama' },
+  { value: 'ADMIN', label: 'Administrador', descripcion: 'Panel completo de su propia entidad (Cooperativa Bienestar).', correo: 'admin@beetticket.com', to: '/admin' },
+  { value: 'LECTOR', label: 'Lector', descripcion: 'Solo lectura de su propia entidad (Cooperativa Bienestar).', correo: 'lector@beetticket.com', to: '/lector' },
 ];
 
 export default function EntrarAdministrador() {
@@ -81,7 +81,7 @@ export default function EntrarAdministrador() {
 
         <div className="login-note text-caption">
           Este selector es temporal, solo para esta copia de prueba. Más adelante lo reemplaza la autenticación real de
-          FastAPI, que determinará el rol y la cooperativa por backend.
+          FastAPI, que determinará el rol y la entidad por backend.
         </div>
       </div>
     </div>

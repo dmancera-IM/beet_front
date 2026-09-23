@@ -14,7 +14,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', act
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div className={`modal-panel ${size === 'lg' ? 'modal-lg' : ''}`} role="dialog" aria-modal="true">
+      <div className={`modal-panel ${size === 'lg' ? 'modal-lg' : ''} ${size === 'xl' ? 'modal-xl' : ''}`} role="dialog" aria-modal="true">
         {title && <h3 className="modal-title">{title}</h3>}
         <div className="modal-body" style={{ color: 'var(--text-primary)' }}>{children}</div>
         {actions && <div className="modal-actions">{actions}</div>}

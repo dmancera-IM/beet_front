@@ -82,7 +82,7 @@ export default function DocumentosLegales() {
             {resultado.afiliado === null ? (
               <EmptyState
                 title="No se encontró ningún afiliado"
-                description="Ningún afiliado de esta cooperativa tiene ese número de documento."
+                description="Ningún afiliado de esta entidad tiene ese número de documento."
               />
             ) : (
               <>

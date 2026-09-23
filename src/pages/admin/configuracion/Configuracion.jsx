@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card } from '../../../components/ui/Card';
-import { Field, Input } from '../../../components/ui/Field';
+import { Field, Input, Select } from '../../../components/ui/Field';
 import Button from '../../../components/ui/Button';
+import { Badge } from '../../../components/ui/Badge';
+import FileUploader from '../../../components/ui/FileUploader';
 import { ErrorState, LoadingState } from '../../../components/ui/States';
 import * as adminService from '../../../services/adminService';
+import { getLogo, setLogo, clearLogo, fileToDataUrl } from '../../../services/logoStore';
+import { getCuentaPago, setCuentaPago } from '../../../services/paymentAccountStore';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
+
+const PROVEEDORES_PAGO = ['Wompi', 'PayU', 'Mercado Pago'];
 
 // NOTE: unlike an earlier design assumption, the real `cooperativas` table
 // only has `nombre`, `nit`, and `estado` — the payment-method toggles and
@@ -15,13 +21,20 @@ import { useToast } from '../../../context/ToastContext';
 // column and are not part of this integration pass (see SCHEMA_NOTES.md).
 export default function Configuracion() {
   useSetBreadcrumbs([{ label: 'Configuración' }]);
-  const { permissions } = useAuth();
+  const { permissions, cooperativaId } = useAuth();
   const { push } = useToast();
 
   const [coop, setCoop] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [logo, setLogoState] = useState(() => getLogo(cooperativaId));
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const [cuentaPago, setCuentaPagoState] = useState(() => getCuentaPago(cooperativaId));
+  const [editandoPago, setEditandoPago] = useState(false);
+  const [formPago, setFormPago] = useState({ proveedor: PROVEEDORES_PAGO[0], ultimosDigitos: '' });
+  const [errorPago, setErrorPago] = useState('');
 
   const readOnly = !permissions.write;
 
@@ -50,6 +63,51 @@ export default function Configuracion() {
     }
   };
 
+  const handleLogoFile = async (file) => {
+    if (!file.type.startsWith('image/')) {
+      push({ title: 'Archivo no válido', description: 'Selecciona una imagen (PNG, JPG o SVG).', variant: 'error' });
+      return;
+    }
+    setUploadingLogo(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setLogo(cooperativaId, dataUrl);
+      setLogoState(dataUrl);
+      push({ title: 'Logo actualizado', description: 'Tus afiliados ya verán este logo junto al de BEET.' });
+    } catch {
+      push({ title: 'No se pudo cargar el logo', description: 'Intenta con otra imagen.', variant: 'error' });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const quitarLogo = () => {
+    clearLogo(cooperativaId);
+    setLogoState(null);
+    push({ title: 'Logo eliminado', description: 'Tus afiliados solo verán el logo de BEET.' });
+  };
+
+  const abrirFormularioPago = () => {
+    setFormPago({
+      proveedor: cuentaPago?.proveedor ?? PROVEEDORES_PAGO[0],
+      ultimosDigitos: cuentaPago?.ultimosDigitos ?? '',
+    });
+    setErrorPago('');
+    setEditandoPago(true);
+  };
+
+  const guardarCuentaPago = () => {
+    const digitos = formPago.ultimosDigitos.trim();
+    if (!/^\d{4}$/.test(digitos)) {
+      setErrorPago('Ingresa exactamente 4 dígitos (dato ficticio, no la tarjeta real).');
+      return;
+    }
+    const cuenta = setCuentaPago(cooperativaId, { proveedor: formPago.proveedor, ultimosDigitos: digitos });
+    setCuentaPagoState(cuenta);
+    setEditandoPago(false);
+    push({ title: 'Cuenta de pago guardada', description: 'Tus afiliados podrán pagar con tarjeta usando esta cuenta.' });
+  };
+
   if (loading) return <LoadingState title="Cargando configuración desde PostgreSQL…" />;
   if (error) return <ErrorState description={error} onRetry={cargar} />;
 
@@ -58,13 +116,13 @@ export default function Configuracion() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Configuración</h1>
-          <p className="page-subtitle">Datos de la cooperativa registrados en PostgreSQL.</p>
+          <p className="page-subtitle">Datos de la entidad registrados en PostgreSQL.</p>
         </div>
       </div>
 
-      <Card padding="card-pad-lg">
+      <Card padding="card-pad-lg" className="section-gap">
         <div style={{ maxWidth: 560 }}>
-          <Field label="Nombre de la cooperativa">
+          <Field label="Nombre de la entidad">
             <Input value={coop.nombre} disabled={readOnly} onChange={(e) => setCoop((v) => ({ ...v, nombre: e.target.value }))} />
           </Field>
           <Field label="NIT" hint="El NIT se configura una sola vez y no se puede editar desde aquí.">
@@ -75,6 +133,106 @@ export default function Configuracion() {
           )}
         </div>
       </Card>
+
+      {cooperativaId && (
+      <Card padding="card-pad-lg">
+        <div className="text-label" style={{ marginBottom: 4 }}>Personalización</div>
+        <p className="text-caption cell-muted" style={{ marginTop: 0, marginBottom: 16 }}>
+          El logo de tu entidad aparece junto al logo de BEET en el portal de tus afiliados. Si no cargas uno, tus afiliados solo verán el logo de BEET.
+        </p>
+        <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <div className="text-caption" style={{ marginBottom: 8 }}>Logo actual</div>
+            <div style={{ width: 120, height: 60, border: '1px solid var(--border-default)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)', overflow: 'hidden' }}>
+              {logo ? (
+                <img src={logo} alt="Logo de la entidad" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              ) : (
+                <span className="text-caption cell-muted">Sin logo</span>
+              )}
+            </div>
+          </div>
+          {!readOnly && (
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <FileUploader hint="PNG, JPG o SVG · máx. 2 MB" accept="image/*" onFile={handleLogoFile} />
+              {uploadingLogo && <div className="text-caption" style={{ marginTop: 8 }}>Cargando…</div>}
+              {logo && (
+                <Button variant="ghost" size="sm" onClick={quitarLogo} style={{ marginTop: 8 }}>Quitar logo</Button>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+      )}
+
+      {cooperativaId && (
+      <Card padding="card-pad-lg" className="section-gap">
+        <div className="text-label" style={{ marginBottom: 4 }}>Cuenta de pago</div>
+        <p className="text-caption cell-muted" style={{ marginTop: 0, marginBottom: 16 }}>
+          Cuenta que usarán los afiliados de tu entidad cuando paguen con tarjeta. Es la cuenta de la entidad, no la de cada afiliado.
+        </p>
+
+        {!editandoPago && (
+          <>
+            {cuentaPago ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div className="text-caption" style={{ marginBottom: 4 }}>Proveedor</div>
+                  <div className="text-body">{cuentaPago.proveedor}</div>
+                </div>
+                <div>
+                  <div className="text-caption" style={{ marginBottom: 4 }}>Cuenta asociada</div>
+                  <div className="text-body" style={{ letterSpacing: 2 }}>•••• •••• •••• {cuentaPago.ultimosDigitos}</div>
+                </div>
+                <div>
+                  <div className="text-caption" style={{ marginBottom: 4 }}>Estado</div>
+                  <Badge tone="green" dot>Configurada</Badge>
+                </div>
+                {!readOnly && (
+                  <Button variant="secondary" size="sm" onClick={abrirFormularioPago}>Editar configuración</Button>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="text-body cell-muted" style={{ marginTop: 0 }}>No has configurado una cuenta de pago.</p>
+                {!readOnly && <Button size="sm" onClick={abrirFormularioPago}>Configurar cuenta</Button>}
+              </div>
+            )}
+          </>
+        )}
+
+        {editandoPago && (
+          <div style={{ maxWidth: 420 }}>
+            <Field label="Proveedor">
+              <Select
+                value={formPago.proveedor}
+                onChange={(e) => setFormPago((v) => ({ ...v, proveedor: e.target.value }))}
+              >
+                {PROVEEDORES_PAGO.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field
+              label="Últimos 4 dígitos de la cuenta"
+              hint="Dato ficticio/enmascarado para pruebas — nunca ingreses un número de tarjeta real."
+              error={errorPago}
+            >
+              <Input
+                maxLength={4}
+                inputMode="numeric"
+                placeholder="4582"
+                value={formPago.ultimosDigitos}
+                onChange={(e) => setFormPago((v) => ({ ...v, ultimosDigitos: e.target.value.replace(/\D/g, '') }))}
+              />
+            </Field>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button onClick={guardarCuentaPago}>Guardar</Button>
+              <Button variant="ghost" onClick={() => setEditandoPago(false)}>Cancelar</Button>
+            </div>
+          </div>
+        )}
+      </Card>
+      )}
     </div>
   );
 }

@@ -11,8 +11,10 @@ import * as dashboardService from '../../services/dashboardService';
 
 // Cada rol vive en su propia área con su propio prefijo de ruta — ver
 // App.jsx. El menú se arma según el rol autenticado, no hay una sola lista
-// fija como antes: GES nunca ve Afiliados/Cupos/Configuración, Lector
-// nunca ve GES/Configuración, y el Administrador de cooperativa solo ve un
+// fija como antes: GES nunca ve Afiliados/Cupos (esos son de cada
+// cooperativa) pero sí tiene su propia Configuración (imagen + plantilla
+// PDF por convenio, distinta de la de ADMIN); Lector nunca ve
+// GES/Configuración, y el Administrador de cooperativa solo ve un
 // enlace "GES" que abre el formulario de solicitud (no el panel completo).
 function basePathFor(role, roles) {
   if (role === roles.GES) return '/ges';
@@ -27,11 +29,16 @@ function buildNav(role, roles) {
   if (role === roles.GES) {
     return [
       { to: base, label: 'Dashboard', icon: IconDashboard, end: true },
-      { to: `${base}/cooperativas`, label: 'Cooperativas', icon: IconAfiliados },
+      { to: `${base}/cooperativas`, label: 'Entidades', icon: IconAfiliados },
       { to: `${base}/storage`, label: 'Storage', icon: IconInventario },
       { to: `${base}/convenios`, label: 'Convenios', icon: IconConvenios },
-      { to: `${base}/compras`, label: 'Comprar bonos y boletas', icon: IconPlus },
+      { to: `${base}/compras`, label: 'Carga de bonos y boletas', icon: IconPlus },
       { to: `${base}/transacciones`, label: 'Transacciones', icon: IconVentas },
+      // Solicitudes de compra rápida/prioritaria de entidades (sección 6).
+      { to: `${base}/b2b`, label: 'B2B', icon: IconGes },
+      // Imagen + plantilla PDF por convenio (ver Configuracion.jsx de GES)
+      // — distinta de la Configuración de ADMIN, cada rol tiene la suya.
+      { to: `${base}/configuracion`, label: 'Configuración', icon: IconConfiguracion },
     ];
   }
 
@@ -45,7 +52,9 @@ function buildNav(role, roles) {
       { to: base, label: 'Dashboard', icon: IconDashboard, end: true },
       { to: `${base}/afiliados`, label: 'Afiliados', icon: IconAfiliados },
       { to: `${base}/convenios`, label: 'Convenios', icon: IconConvenios },
-      { to: `${base}/ges`, label: 'GES', icon: IconGes },
+      // "GES" (compra normal) y "B2B" (compra rápida/prioritaria) se
+      // fusionaron visualmente en una sola vista — ver pages/admin/BolsaCredito.jsx.
+      { to: `${base}/bolsa-credito`, label: 'Bolsa / Crédito', icon: IconGes },
       { to: `${base}/transacciones`, label: 'Transacciones', icon: IconVentas },
       { to: `${base}/reportes`, label: 'Reportes', icon: IconReportes },
       { to: `${base}/documentos-legales`, label: 'Documentos legales', icon: IconDocumentos },

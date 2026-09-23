@@ -5,7 +5,7 @@ import { StatusBadge } from '../../../components/ui/Badge';
 import { IconWarningTriangle } from '../../../components/ui/Icons';
 import { formatCOP, formatDate } from '../../../utils/format';
 import GesNav from './GesNav';
-import { getCooperativas, getDineroDisponibleParaCompras, getInventarioCentral, getSolicitudes } from './gesData';
+import { getCooperativas, getDineroGanadoPorVentas, getInventarioCentral, getSolicitudes } from './gesData';
 
 export default function GesDashboard() {
   useSetBreadcrumbs([{ label: 'GES' }]);
@@ -17,7 +17,7 @@ export default function GesDashboard() {
   const cooperativasActivas = cooperativas.filter((c) => c.estado === 'Activa').length;
   const bonosEnStorage = inventario.reduce((sum, i) => sum + i.disponible, 0);
   const pendientes = solicitudes.filter((s) => s.estado === 'Pendiente');
-  const dineroDisponible = getDineroDisponibleParaCompras();
+  const dineroGanado = getDineroGanadoPorVentas();
 
   return (
     <div>
@@ -26,7 +26,7 @@ export default function GesDashboard() {
           <span className="text-label">Panel GES</span>
           <h1 className="text-h1 page-title">GES</h1>
           <p className="page-subtitle">
-            Storage y cooperativas: proveedor → GES → Storage → cooperativa → afiliados.
+            Storage y entidades: proveedor → GES → Storage → entidad → afiliados.
           </p>
         </div>
       </div>
@@ -42,8 +42,8 @@ export default function GesDashboard() {
           deltaTone={pendientes.length > 0 ? 'warning' : 'neutral'}
           icon={pendientes.length > 0 ? <IconWarningTriangle size={14} color="var(--warning)" /> : undefined}
         />
-        <KpiCard label="Cooperativas activas" value={cooperativasActivas} delta={`${cooperativas.length} en total`} deltaTone="neutral" />
-        <KpiCard label="Dinero disponible para compras" value={formatCOP(dineroDisponible)} delta="Para comprar bonos/boletas a proveedores" deltaTone="neutral" />
+        <KpiCard label="Entidades activas" value={cooperativasActivas} delta={`${cooperativas.length} en total`} deltaTone="neutral" />
+        <KpiCard label="Dinero ganado por ventas" value={formatCOP(dineroGanado)} delta="Ventas de bonos/boletas a entidades" deltaTone="neutral" />
       </div>
 
       <div className="grid detail-grid-2col" style={{ '--col-ratio': '1.3fr 1fr', gap: 16 }}>

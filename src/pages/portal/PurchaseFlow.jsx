@@ -131,7 +131,7 @@ export default function PurchaseFlow() {
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 14 }}>¿Cuántas unidades quieres comprar?</div>
           {maxUnidades < 1 ? (
-            <EmptyState title="Este beneficio no admite compras" description="Consulta con tu cooperativa." actionLabel="Volver al catálogo" onAction={() => navigate('/portal/catalogo')} />
+            <EmptyState title="Este beneficio no admite compras" description="Consulta con tu entidad." actionLabel="Volver al catálogo" onAction={() => navigate('/portal/catalogo')} />
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -159,7 +159,7 @@ export default function PurchaseFlow() {
           <div className="text-label" style={{ marginBottom: 14 }}>Forma de pago</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
             <Radio name="pago" label="Tarjeta débito o crédito" checked={metodoPago === 'tarjeta'} onChange={() => setMetodoPago('tarjeta')} />
-            <Radio name="pago" label="Cupo de crédito de la cooperativa" checked={metodoPago === 'cupo'} disabled={!cupo} onChange={() => setMetodoPago('cupo')} />
+            <Radio name="pago" label="Cupo de crédito de la entidad" checked={metodoPago === 'cupo'} disabled={!cupo} onChange={() => setMetodoPago('cupo')} />
             {!cupo && <div className="text-caption" style={{ marginLeft: 26 }}>No tienes un cupo de crédito asignado.</div>}
           </div>
 
@@ -229,7 +229,7 @@ export default function PurchaseFlow() {
             <Row label="Beneficio" value={convenio.nombre} />
             <Row label="Cantidad" value={`${cantidad} unidad${cantidad > 1 ? 'es' : ''}`} />
             <Row label="Precio unitario" value={formatCOP(convenio.precio_beet)} />
-            <Row label="Forma de pago" value={metodoPago === 'tarjeta' ? 'Tarjeta débito/crédito' : `Cupo de la cooperativa · ${cuotasLabel(cuotas)}`} />
+            <Row label="Forma de pago" value={metodoPago === 'tarjeta' ? 'Tarjeta débito/crédito' : `Cupo de la entidad · ${cuotasLabel(cuotas)}`} />
             {metodoPago === 'cupo' && <Row label="Cupo disponible después de esta compra" value={formatCOP(cupoDisponible - total)} />}
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border-default)' }}>
               <span style={{ fontWeight: 600 }}>Total a pagar</span>
@@ -260,7 +260,7 @@ export default function PurchaseFlow() {
             <Row label="Cuotas" value={cuotasLabel(cuotas)} />
           </div>
           <p className="text-small" style={{ background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 10, padding: 14 }}>
-            El afiliado autoriza a la cooperativa a descontar del cupo de crédito asignado el valor de la compra realizada, en el número de cuotas seleccionado, y reconoce esta obligación como una deuda exigible frente a la entidad.
+            El afiliado autoriza a la entidad a descontar del cupo de crédito asignado el valor de la compra realizada, en el número de cuotas seleccionado, y reconoce esta obligación como una deuda exigible frente a la entidad.
           </p>
           <div className="text-label" style={{ margin: '18px 0 8px' }}>Firma</div>
           <SignaturePad onChange={setFirmaBase64} />

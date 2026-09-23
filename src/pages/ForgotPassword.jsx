@@ -19,7 +19,7 @@ const COPY = {
   admin: {
     subtitle: 'Panel administrativo',
     identifierLabel: 'Correo electrónico',
-    identifierPlaceholder: 'nombre@cooperativaejemplo.com',
+    identifierPlaceholder: 'nombre@entidadejemplo.com',
     loginPath: '/login',
     loginLabel: 'Volver a iniciar sesión',
     forgot: authService.adminForgotPassword,

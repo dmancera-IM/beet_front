@@ -28,7 +28,7 @@ export default function GesTransacciones() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Transacciones</h1>
-          <p className="page-subtitle">Operaciones entre GES y las cooperativas: quién solicitó, qué convenio, cuánto y en qué estado.</p>
+          <p className="page-subtitle">Operaciones entre GES y las entidades: quién solicitó, qué convenio, cuánto y en qué estado.</p>
         </div>
       </div>
 
@@ -39,7 +39,7 @@ export default function GesTransacciones() {
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 280 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar por cooperativa, administrador o convenio..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Buscar por entidad, administrador o convenio..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
             <Select style={{ width: 160 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
               <option value="">Todo estado</option>
@@ -51,7 +51,7 @@ export default function GesTransacciones() {
 
         {pageRows.length === 0 ? (
           total === 0 ? (
-            <EmptyState title="Sin transacciones registradas" description="Las operaciones entre GES y las cooperativas aparecerán aquí." />
+            <EmptyState title="Sin transacciones registradas" description="Las operaciones entre GES y las entidades aparecerán aquí." />
           ) : (
             <EmptyState title="Sin transacciones que coincidan" description="Ajusta los filtros o el término de búsqueda." />
           )

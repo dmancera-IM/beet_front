@@ -16,8 +16,8 @@ export default function RequireCooperativaSeleccionada({ children }) {
     return (
       <EmptyState
         icon={<IconInbox color="var(--text-muted)" />}
-        title="Selecciona una cooperativa"
-        description="Selecciona una cooperativa arriba para ver esta información."
+        title="Selecciona una entidad"
+        description="Selecciona una entidad arriba para ver esta información."
       />
     );
   }

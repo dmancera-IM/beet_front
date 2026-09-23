@@ -160,7 +160,6 @@ export default function Reportes() {
                   <th className="right">Vendidas</th>
                   <th className="right">Ingresos</th>
                   <th className="right">Disponible</th>
-                  <th className="right">Entregada</th>
                   <th className="right">Tasa de redención</th>
                 </tr>
               </thead>
@@ -171,7 +170,6 @@ export default function Reportes() {
                     <td className="right tabular">{r.unidades_vendidas}</td>
                     <td className="right tabular">{formatCOP(r.ingresos)}</td>
                     <td className="right tabular">{r.disponible}</td>
-                    <td className="right tabular">{r.entregada}</td>
                     <td className="right tabular">{r.tasa_redencion}%</td>
                   </tr>
                 ))}

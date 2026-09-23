@@ -7,8 +7,9 @@ import Button from '../../../components/ui/Button';
 import Modal from '../../../components/ui/Modal';
 import { useTableState } from '../../../hooks/useTableState';
 import { useAuth } from '../../../context/AuthContext';
-import { formatDate } from '../../../utils/format';
+import { formatCOP, formatDate } from '../../../utils/format';
 import { getSolicitudesPorCooperativa } from '../ges/gesData';
+import { precioGesEntidadDe } from '../../../services/mockDb';
 
 // Transacciones para ADMIN (sección 6): el historial de bonos/boletas que
 // la cooperativa adquirió desde GES (ver ADMIN → GES). No se muestran
@@ -33,7 +34,7 @@ export default function TransaccionesListAdmin() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Transacciones</h1>
-          <p className="page-subtitle">Historial de bonos y boletas que tu cooperativa ha adquirido desde GES.</p>
+          <p className="page-subtitle">Historial de bonos y boletas que tu entidad ha adquirido desde GES.</p>
         </div>
       </div>
 
@@ -91,15 +92,20 @@ export default function TransaccionesListAdmin() {
         title="Detalle de la transacción"
         actions={<Button variant="secondary" onClick={() => setDetalle(null)}>Cerrar</Button>}
       >
-        {detalle && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div><span className="text-label">Convenio</span><div>{detalle.proveedorNombre}</div></div>
-            <div><span className="text-label">Producto</span><div>{detalle.productoNombre}</div></div>
-            <div><span className="text-label">Cantidad</span><div className="tabular">{detalle.cantidad.toLocaleString('es-CO')} unidades</div></div>
-            <div><span className="text-label">Fecha</span><div>{formatDate(detalle.fecha)}</div></div>
-            <div><span className="text-label">Solicitado por</span><div>{detalle.administrador ?? '—'}</div></div>
-          </div>
-        )}
+        {detalle && (() => {
+          const precio = precioGesEntidadDe(detalle.productoId);
+          const dineroGastado = precio != null ? precio * detalle.cantidad : null;
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div><span className="text-label">Convenio</span><div>{detalle.proveedorNombre}</div></div>
+              <div><span className="text-label">Producto</span><div>{detalle.productoNombre}</div></div>
+              <div><span className="text-label">Cantidad</span><div className="tabular">{detalle.cantidad.toLocaleString('es-CO')} unidades</div></div>
+              <div><span className="text-label">Dinero gastado</span><div className="tabular">{dineroGastado != null ? formatCOP(dineroGastado) : '—'}</div></div>
+              <div><span className="text-label">Fecha</span><div>{formatDate(detalle.fecha)}</div></div>
+              <div><span className="text-label">Solicitado por</span><div>{detalle.administrador ?? '—'}</div></div>
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );

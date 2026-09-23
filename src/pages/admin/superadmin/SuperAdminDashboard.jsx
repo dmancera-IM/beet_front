@@ -25,14 +25,14 @@ export default function SuperAdminDashboard() {
         <div>
           <span className="text-label">Súper administrador</span>
           <h1 className="text-h1 page-title">Dashboard Súper admin</h1>
-          <p className="page-subtitle">Vista panorámica de todo BEET: cooperativas, ventas, inventario y convenios.</p>
+          <p className="page-subtitle">Vista panorámica de todo BEET: entidades, ventas, inventario y convenios.</p>
         </div>
       </div>
 
       <div className="grid grid-kpi section-gap">
-        <KpiCard label="Cooperativas" value={resumen.cooperativas} deltaTone="neutral" delta="Registradas en BEET" />
-        <KpiCard label="Cooperativas activas" value={resumen.cooperativasActivas} deltaTone="neutral" delta={`de ${resumen.cooperativas} en total`} />
-        <KpiCard label="Afiliados" value={resumen.afiliados.toLocaleString('es-CO')} deltaTone="neutral" delta="En todas las cooperativas" />
+        <KpiCard label="Entidades" value={resumen.cooperativas} deltaTone="neutral" delta="Registradas en BEET" />
+        <KpiCard label="Entidades activas" value={resumen.cooperativasActivas} deltaTone="neutral" delta={`de ${resumen.cooperativas} en total`} />
+        <KpiCard label="Afiliados" value={resumen.afiliados.toLocaleString('es-CO')} deltaTone="neutral" delta="En todas las entidades" />
         <KpiCard label="Bonos/boletas vendidos" value={resumen.bonosVendidos.toLocaleString('es-CO')} deltaTone="neutral" delta="Transacciones completadas" />
       </div>
 
@@ -41,17 +41,17 @@ export default function SuperAdminDashboard() {
           label="Solicitudes pendientes"
           value={resumen.solicitudesPendientes}
           deltaTone={resumen.solicitudesPendientes > 0 ? 'warning' : 'neutral'}
-          delta="Cooperativa → GES"
+          delta="Entidad → GES"
         />
         <KpiCard label="Transacciones" value={resumen.transacciones.toLocaleString('es-CO')} deltaTone="neutral" delta="Registradas en el sistema" />
-        <KpiCard label="Inventario total" value={resumen.inventarioTotal.toLocaleString('es-CO')} deltaTone="neutral" delta="Cargado por cooperativa" />
+        <KpiCard label="Inventario total" value={resumen.inventarioTotal.toLocaleString('es-CO')} deltaTone="neutral" delta="Cargado por entidad" />
         <KpiCard label="Inventario disponible" value={resumen.inventarioDisponible.toLocaleString('es-CO')} deltaTone="neutral" delta="Listo para vender" />
       </div>
 
       <Card padding="card-pad-lg" className="section-gap">
         <div className="text-label" style={{ marginBottom: 4 }}>Inventario BEET</div>
         <p className="text-caption cell-muted" style={{ marginTop: 0, marginBottom: 14 }}>
-          Inventario de las cooperativas (distinto del Storage central de GES).
+          Inventario de las entidades (distinto del Storage central de GES).
         </p>
         <div className="grid grid-3">
           <div>
@@ -71,7 +71,7 @@ export default function SuperAdminDashboard() {
 
       <div className="grid detail-grid-2col section-gap" style={{ '--col-ratio': '1.2fr 1fr', gap: 16 }}>
         <Card padding="card-pad-lg">
-          <div className="text-label" style={{ marginBottom: 14 }}>Ventas por cooperativa</div>
+          <div className="text-label" style={{ marginBottom: 14 }}>Ventas por entidad</div>
           {ventasPorCooperativa.length === 0 ? (
             <div className="text-small cell-muted">Sin ventas registradas todavía.</div>
           ) : (
@@ -121,17 +121,17 @@ export default function SuperAdminDashboard() {
       <div className="table-card">
         <div className="table-toolbar">
           <div className="table-toolbar-left">
-            <span className="text-label" style={{ marginBottom: 0 }}>Resumen de cooperativas</span>
+            <span className="text-label" style={{ marginBottom: 0 }}>Resumen de entidades</span>
           </div>
         </div>
         {resumenCooperativas.length === 0 ? (
-          <EmptyState title="No hay cooperativas registradas" description="Las cooperativas de BEET aparecerán aquí." />
+          <EmptyState title="No hay entidades registradas" description="Las entidades de BEET aparecerán aquí." />
         ) : (
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Cooperativa</th>
+                  <th>Entidad</th>
                   <th>Estado</th>
                   <th className="right">Afiliados</th>
                   <th className="right">Convenios activos</th>

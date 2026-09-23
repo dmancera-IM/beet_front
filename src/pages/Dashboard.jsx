@@ -23,7 +23,7 @@ export default function Dashboard() {
   // Cooperativa A pero el dashboard sigue mostrando el nombre anterior").
   // `useCooperativa().selected` sí es la cooperativa vigente en cada
   // render, así que se usa esa en su lugar cuando aplica.
-  const nombreCooperativaActual = isSuperAdmin ? (selected?.nombre ?? 'Selecciona una cooperativa') : nombreEntidad;
+  const nombreCooperativaActual = isSuperAdmin ? (selected?.nombre ?? 'Selecciona una entidad') : nombreEntidad;
   const base = useAreaBase();
 
   const [stats, setStats] = useState(null);
@@ -75,7 +75,12 @@ export default function Dashboard() {
 
       <div className="grid grid-kpi section-gap">
         <KpiCard label="Ventas del mes" value={formatCOP(stats.ventas_del_mes)} delta="Mes en curso" deltaTone="neutral" />
-        <KpiCard label="Ahorro generado" value={formatCOP(stats.ahorro_generado)} delta="Acumulado histórico" deltaTone="neutral" />
+        <KpiCard
+          label="Cupo de crédito disponible"
+          value={formatCOP(stats.valor_disponible_compra)}
+          delta="Otorgado por GES"
+          deltaTone="neutral"
+        />
         <KpiCard
           label="Convenios por vencer"
           value={stats.convenios_por_vencer}
@@ -98,7 +103,7 @@ export default function Dashboard() {
             </div>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-                <span>Cupo de la cooperativa</span><span className="tabular" style={{ color: 'var(--text-muted)' }}>{stats.ventas_por_forma_de_pago.pct_cupo}%</span>
+                <span>Cupo de la entidad</span><span className="tabular" style={{ color: 'var(--text-muted)' }}>{stats.ventas_por_forma_de_pago.pct_cupo}%</span>
               </div>
               <div className="progress-track"><div className="progress-fill green" style={{ width: `${stats.ventas_por_forma_de_pago.pct_cupo}%` }} /></div>
             </div>
@@ -110,10 +115,24 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <div className="text-label" style={{ marginBottom: 14 }}>Cupo consumido (todos los afiliados)</div>
-          <div className="text-small cell-muted" style={{ padding: '8px 0' }}>
-            Este agregado todavía no tiene un endpoint dedicado en el backend — se conectará en la fase de cupos/transacciones.
-          </div>
+          <div className="text-label" style={{ marginBottom: 14 }}>Inventario restante por convenio</div>
+          {stats.inventario_restante_por_convenio.length === 0 ? (
+            <div className="text-small cell-muted">Todavía no has comprado inventario de ningún convenio a GES.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {stats.inventario_restante_por_convenio.map((c) => (
+                <div key={c.convenio_nombre}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                    <span>{c.convenio_nombre}</span><span className="tabular" style={{ color: 'var(--text-muted)' }}>{c.pct_restante}% restante</span>
+                  </div>
+                  <div className="progress-track"><div className="progress-fill brand" style={{ width: `${c.pct_restante}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-caption cell-muted" style={{ marginTop: 14, marginBottom: 0 }}>
+            El cupo consumido de cada afiliado se consulta desde Afiliados.
+          </p>
         </Card>
       </div>
 

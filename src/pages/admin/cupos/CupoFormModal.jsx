@@ -28,7 +28,7 @@ export default function CupoFormModal({ open, onClose, afiliado, onSave }) {
         </>
       }
     >
-      <Field label="Monto del cupo" hint="Cuánto puede consumir el afiliado pagando con cupo de la cooperativa.">
+      <Field label="Monto del cupo" hint="Cuánto puede consumir el afiliado pagando con cupo de la entidad.">
         <Input type="number" min="0" step="10000" value={total} onChange={(e) => setTotal(e.target.value)} />
       </Field>
     </Modal>

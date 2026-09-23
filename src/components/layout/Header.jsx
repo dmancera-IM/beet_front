@@ -53,7 +53,7 @@ export default function Header({ breadcrumbs, onOpenMobileNav }) {
             hacía nada. */}
         {isSuperAdmin && (
           <Select
-            aria-label="Cooperativa seleccionada"
+            aria-label="Entidad seleccionada"
             value={selectedId ?? ''}
             onChange={(e) => {
               const value = e.target.value;
@@ -63,7 +63,7 @@ export default function Header({ breadcrumbs, onOpenMobileNav }) {
             }}
             style={{ minWidth: 200 }}
           >
-            <option value="">Selecciona una cooperativa…</option>
+            <option value="">Selecciona una entidad…</option>
             {cooperativas.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}{!c.estado ? ' (inactiva)' : ''}</option>
             ))}
@@ -112,7 +112,7 @@ export default function Header({ breadcrumbs, onOpenMobileNav }) {
             onClose={() => setProfileOpen(false)}
             style={{ top: 46, right: 0 }}
             items={[
-              { label: role === roles.GES ? 'GES' : isSuperAdmin ? selected?.nombre || 'Selecciona una cooperativa arriba' : nombreEntidad, disabled: true },
+              { label: role === roles.GES ? 'GES' : isSuperAdmin ? selected?.nombre || 'Selecciona una entidad arriba' : nombreEntidad, disabled: true },
               { divider: true },
               ...(tieneConfiguracion
                 ? [{ label: 'Mi perfil / Configuración', onClick: () => navigate(`${basePath}/configuracion`) }, { divider: true }]

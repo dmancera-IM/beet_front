@@ -46,7 +46,7 @@ export default function EditProfile() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Editar perfil</h1>
-          <p className="page-subtitle">Tu nombre y cédula los administra tu cooperativa; aquí puedes actualizar tus datos de contacto.</p>
+          <p className="page-subtitle">Tu nombre y cédula los administra tu entidad; aquí puedes actualizar tus datos de contacto.</p>
         </div>
       </div>
 

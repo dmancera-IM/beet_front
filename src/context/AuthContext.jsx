@@ -105,7 +105,7 @@ export function AuthProvider({ children }) {
       // secciones 26/27 de la definición funcional. Usado, por ejemplo, por
       // ComprarBonosGes.jsx para saber a nombre de qué cooperativa solicita.
       cooperativaId: adminUser?.cooperativa_id ?? null,
-      nombreEntidad: nombreEntidad || 'tu cooperativa',
+      nombreEntidad: nombreEntidad || 'tu entidad',
     }),
     [status, adminUser, role, nombreEntidad, login, logout]
   );

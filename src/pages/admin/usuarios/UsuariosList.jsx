@@ -61,16 +61,16 @@ export default function UsuariosList() {
     setCoopSaving(true);
     try {
       const nueva = await adminService.crearCooperativa({ nombre: coopDraft.nombre.trim(), nit: coopDraft.nit.trim() });
-      push({ title: 'Cooperativa creada', description: nueva.nombre });
+      push({ title: 'Entidad creada', description: nueva.nombre });
       setCoopFormOpen(false);
       setCoopDraft(emptyCoopDraft);
       recargarListaCooperativas(); // refresca el filtro/selector de esta pantalla
       recargarCooperativas(); // refresca el selector persistente del Header de inmediato
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setCoopErrors({ nit: 'Ya existe una cooperativa con ese NIT.' });
+        setCoopErrors({ nit: 'Ya existe una entidad con ese NIT.' });
       } else {
-        push({ title: 'No se pudo crear la cooperativa', description: err.message, variant: 'error' });
+        push({ title: 'No se pudo crear la entidad', description: err.message, variant: 'error' });
       }
     } finally {
       setCoopSaving(false);
@@ -102,7 +102,7 @@ export default function UsuariosList() {
     // cooperativa_id is required for every role except SUPER_ADMIN and GES,
     // neither of which belongs to a single cooperativa (ver secciones 26-27
     // de la definición funcional).
-    if (draft.rol !== 'SUPER_ADMIN' && draft.rol !== 'GES' && !draft.cooperativa_id) nextErrors.cooperativa_id = 'Selecciona la cooperativa de este usuario.';
+    if (draft.rol !== 'SUPER_ADMIN' && draft.rol !== 'GES' && !draft.cooperativa_id) nextErrors.cooperativa_id = 'Selecciona la entidad de este usuario.';
     setDraftErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
@@ -181,7 +181,7 @@ export default function UsuariosList() {
             <p className="page-subtitle">Usuarios internos con acceso al panel administrativo, bajo los roles Súper administrador, Administrador y Lector.</p>
           </div>
           <div className="page-header-actions">
-            <Button variant="secondary" icon={<IconPlus color="#1F2937" />} onClick={() => setCoopFormOpen(true)}>Crear cooperativa</Button>
+            <Button variant="secondary" icon={<IconPlus color="#1F2937" />} onClick={() => setCoopFormOpen(true)}>Crear entidad</Button>
             <Button icon={<IconPlus color="#fff" />} onClick={() => setFormOpen(true)}>Crear usuario</Button>
           </div>
         </div>
@@ -191,14 +191,14 @@ export default function UsuariosList() {
             <Field label="Buscar">
               <label className="input-affix-wrap">
                 <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-                <Input placeholder="Nombre, correo o cooperativa" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+                <Input placeholder="Nombre, correo o entidad" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
               </label>
             </Field>
           </div>
           <div style={{ maxWidth: 220 }}>
-            <Field label="Filtrar por cooperativa">
+            <Field label="Filtrar por entidad">
               <Select value={filtroCooperativa} onChange={(e) => setFiltroCooperativa(e.target.value)}>
-                <option value="">Todas las cooperativas</option>
+                <option value="">Todas las entidades</option>
                 {cooperativas.map((c) => (
                   <option key={c.id} value={c.id}>{c.nombre}</option>
                 ))}
@@ -229,7 +229,7 @@ export default function UsuariosList() {
                 <thead>
                   <tr>
                     <th>Usuario</th>
-                    <th>Cooperativa</th>
+                    <th>Entidad</th>
                     <th>Rol</th>
                     <th>Estado</th>
                     <th></th>
@@ -299,13 +299,13 @@ export default function UsuariosList() {
             </Select>
           </Field>
           {draft.rol === 'SUPER_ADMIN' ? (
-            <p className="text-caption cell-muted">Un súper administrador no pertenece a una cooperativa en particular — administra todas.</p>
+            <p className="text-caption cell-muted">Un súper administrador no pertenece a una entidad en particular — administra todas.</p>
           ) : draft.rol === 'GES' ? (
-            <p className="text-caption cell-muted">GES no pertenece a ninguna cooperativa — administra el Storage central.</p>
+            <p className="text-caption cell-muted">GES no pertenece a ninguna entidad — administra el Storage central.</p>
           ) : (
-            <Field label="Cooperativa" error={draftErrors.cooperativa_id} hint="A qué cooperativa pertenece este usuario. Solo podrá ver y gestionar los datos de esta cooperativa.">
+            <Field label="Entidad" error={draftErrors.cooperativa_id} hint="A qué entidad pertenece este usuario. Solo podrá ver y gestionar los datos de esta entidad.">
               <Select value={draft.cooperativa_id} onChange={(e) => setDraft((d) => ({ ...d, cooperativa_id: e.target.value }))}>
-                <option value="">Selecciona una cooperativa…</option>
+                <option value="">Selecciona una entidad…</option>
                 {cooperativas.map((c) => (
                   <option key={c.id} value={c.id}>{c.nombre}</option>
                 ))}
@@ -317,18 +317,18 @@ export default function UsuariosList() {
         <Modal
           open={coopFormOpen}
           onClose={() => !coopSaving && setCoopFormOpen(false)}
-          title="Crear cooperativa"
+          title="Crear entidad"
           actions={
             <>
               <Button variant="secondary" onClick={() => setCoopFormOpen(false)} disabled={coopSaving}>Cancelar</Button>
-              <Button onClick={crearCooperativa} loading={coopSaving}>Crear cooperativa</Button>
+              <Button onClick={crearCooperativa} loading={coopSaving}>Crear entidad</Button>
             </>
           }
         >
           <Field label="Nombre" error={coopErrors.nombre}>
-            <Input value={coopDraft.nombre} onChange={(e) => setCoopDraft((d) => ({ ...d, nombre: e.target.value }))} placeholder="Cooperativa Norte" />
+            <Input value={coopDraft.nombre} onChange={(e) => setCoopDraft((d) => ({ ...d, nombre: e.target.value }))} placeholder="Entidad Norte" />
           </Field>
-          <Field label="NIT" error={coopErrors.nit} hint="Debe ser único — identifica legalmente a la cooperativa.">
+          <Field label="NIT" error={coopErrors.nit} hint="Debe ser único — identifica legalmente a la entidad.">
             <Input value={coopDraft.nit} onChange={(e) => setCoopDraft((d) => ({ ...d, nit: e.target.value }))} placeholder="900123456-7" />
           </Field>
         </Modal>

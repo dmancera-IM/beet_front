@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import Button from '../../../components/ui/Button';
 import { Field, Input, Select } from '../../../components/ui/Field';
 import { IconBuscar, IconDescargar, IconPlus, IconUpload } from '../../../components/ui/Icons';
 import { Pagination } from '../../../components/ui/Nav';
+import { KpiCard, Card } from '../../../components/ui/Card';
 import { StatusBadge } from '../../../components/ui/Badge';
 import Avatar from '../../../components/ui/Avatar';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
@@ -19,16 +20,31 @@ import { ApiError } from '../../../services/apiClient';
 import { useToast } from '../../../context/ToastContext';
 import { useCooperativa } from '../../../context/CooperativaContext';
 import { formatCOP } from '../../../utils/format';
-import RequireCooperativaSeleccionada from '../../../components/layout/RequireCooperativaSeleccionada';
 import { useAreaBase } from '../../../hooks/useAreaBase';
+import { getMetricasAfiliados } from '../superadmin/superAdminData';
 
 const emptyCreateForm = { nombres: '', apellidos: '', documento: '', correo: '', telefono: '' };
 
+// Compartida entre Lector y Súper admin (ver App.jsx `paginasCooperativa`).
+// Para Súper admin SIN entidad seleccionada, esto ya no bloquea con
+// "selecciona una entidad": muestra la información GLOBAL de afiliados de
+// TODAS las entidades (sección 9 de la ronda de ajustes), con una columna
+// "Entidad" adicional y sin acciones de creación/edición (no tiene sentido
+// crear un afiliado sin decidir a qué entidad pertenece). En cuanto Súper
+// admin selecciona una entidad en el selector del header, vuelve al modo
+// de siempre (scoped a esa entidad, con todas sus acciones). Lector nunca
+// entra en modo global — siempre tiene exactamente una entidad.
 export default function AfiliadosList() {
   useSetBreadcrumbs([{ label: 'Afiliados' }]);
   const { push } = useToast();
   const { necesitaSeleccion, selectedId, selected, isSuperAdmin } = useCooperativa();
   const base = useAreaBase();
+  const modoGlobal = necesitaSeleccion; // isSuperAdmin && !selectedId
+
+  // Métricas agregadas (secciones 10 y 11): GLOBAL cuando Súper admin no ha
+  // seleccionado ninguna entidad, scoped a esa entidad en cuanto selecciona
+  // una — el selector realmente filtra estos datos, no es solo visual.
+  const metricas = useMemo(() => (isSuperAdmin ? getMetricasAfiliados(selectedId ?? null) : null), [isSuperAdmin, selectedId]);
 
   const [afiliados, setAfiliados] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +61,6 @@ export default function AfiliadosList() {
   const [creating, setCreating] = useState(false);
 
   const cargarAfiliados = useCallback(() => {
-    if (necesitaSeleccion) return;
     setLoading(true);
     setError(null);
     // 100 covers the current test dataset — a future pass should page this
@@ -56,13 +71,13 @@ export default function AfiliadosList() {
       .then((data) => setAfiliados(data.items))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No pudimos cargar los afiliados.'))
       .finally(() => setLoading(false));
-  }, [necesitaSeleccion]);
+  }, []);
 
   useEffect(() => { cargarAfiliados(); }, [cargarAfiliados, selectedId]);
 
   const { search, setSearch, filters, setFilter, pageRows, page, setPage, totalPages, total } = useTableState({
     data: afiliados,
-    searchFields: ['nombres', 'apellidos', 'documento', 'correo'],
+    searchFields: ['nombres', 'apellidos', 'documento', 'correo', 'cooperativa_nombre'],
     pageSize: 10,
   });
 
@@ -133,7 +148,7 @@ export default function AfiliadosList() {
       cargarAfiliados(); // refetch from the backend — confirms it's really there
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setCreateErrors({ documento: 'Ya existe un afiliado con ese documento en esta cooperativa.' });
+        setCreateErrors({ documento: 'Ya existe un afiliado con ese documento en esta entidad.' });
       } else {
         push({ title: 'No se pudo crear el afiliado', description: err.message, variant: 'error' });
       }
@@ -147,31 +162,80 @@ export default function AfiliadosList() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Afiliados</h1>
-          <p className="page-subtitle">Base de afiliados de la cooperativa, obtenida directamente de PostgreSQL.</p>
+          <p className="page-subtitle">
+            {modoGlobal ? 'Afiliados de todas las entidades cooperativas, obtenidos directamente de PostgreSQL.' : 'Base de afiliados de la entidad, obtenida directamente de PostgreSQL.'}
+          </p>
           {isSuperAdmin && (
             <p className="text-caption" style={{ marginTop: 4 }}>
-              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Selecciona una cooperativa arriba para empezar.'}
+              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Todas las entidades cooperativas — selecciona una arriba para gestionar una en particular.'}
             </p>
           )}
         </div>
-        <div className="page-header-actions">
-          <Button variant="secondary" icon={<IconDescargar size={15} color="#1F2937" />} loading={exporting} onClick={handleExport} disabled={necesitaSeleccion}>Exportar</Button>
-          <PermissionGate>
-            <Button variant="secondary" icon={<IconUpload size={16} color="#1F2937" />} onClick={() => setUploadOpen(true)} disabled={necesitaSeleccion}>Cargar afiliados</Button>
-            <Button icon={<IconPlus color="#fff" />} onClick={() => setCreateOpen(true)} disabled={necesitaSeleccion}>Nuevo afiliado</Button>
-          </PermissionGate>
-        </div>
+        {!modoGlobal && (
+          <div className="page-header-actions">
+            <Button variant="secondary" icon={<IconDescargar size={15} color="#1F2937" />} loading={exporting} onClick={handleExport}>Exportar</Button>
+            <PermissionGate>
+              <Button variant="secondary" icon={<IconUpload size={16} color="#1F2937" />} onClick={() => setUploadOpen(true)}>Cargar afiliados</Button>
+              <Button icon={<IconPlus color="#fff" />} onClick={() => setCreateOpen(true)}>Nuevo afiliado</Button>
+            </PermissionGate>
+          </div>
+        )}
       </div>
 
-      {necesitaSeleccion ? (
-        <RequireCooperativaSeleccionada />
-      ) : (
+      {metricas && (
+        <>
+          <div className="grid grid-kpi section-gap">
+            <KpiCard label="Total afiliados" value={metricas.totalAfiliados} deltaTone="neutral" delta={modoGlobal ? 'Todas las entidades' : selected?.nombre ?? ''} />
+            <KpiCard label="Activos" value={metricas.activos} deltaTone="neutral" delta={`${metricas.inactivos} inactivos`} />
+            <KpiCard label="Compras completadas" value={metricas.cantidadCompras} deltaTone="neutral" delta="Transacciones de afiliados" />
+            <KpiCard label="Valor de compras" value={formatCOP(metricas.valorCompras)} deltaTone="neutral" delta="Acumulado" />
+          </div>
+
+          <div className="grid grid-2 section-gap">
+            {modoGlobal && (
+              <Card padding="card-pad">
+                <div className="text-label" style={{ marginBottom: 14 }}>Afiliados por entidad</div>
+                {metricas.porEntidad.length === 0 ? (
+                  <div className="text-small cell-muted">Sin entidades registradas.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {metricas.porEntidad.map((e) => (
+                      <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                        <span>{e.nombre}</span>
+                        <span className="tabular" style={{ fontWeight: 600 }}>{e.afiliados}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+            <Card padding="card-pad">
+              <div className="text-label" style={{ marginBottom: 14 }}>
+                Productos más comprados {modoGlobal ? 'por todos los afiliados' : `por afiliados de ${selected?.nombre ?? 'esta entidad'}`}
+              </div>
+              {metricas.productosMasComprados.length === 0 ? (
+                <div className="text-small cell-muted">Sin compras registradas todavía.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {metricas.productosMasComprados.map((p) => (
+                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span>{p.nombre}</span>
+                      <span className="tabular" style={{ fontWeight: 600 }}>{p.cantidad}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+
       <div className="table-card">
         <div className="table-toolbar">
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 280 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar por nombre, documento o correo" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder={modoGlobal ? 'Buscar por nombre, documento, correo o entidad' : 'Buscar por nombre, documento o correo'} value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
             <Select style={{ width: 160 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value === '' ? '' : e.target.value === 'true')}>
               <option value="">Todo estado</option>
@@ -187,7 +251,7 @@ export default function AfiliadosList() {
           <ErrorState description={error} onRetry={cargarAfiliados} />
         ) : pageRows.length === 0 ? (
           total === 0 ? (
-            <EmptyState title="No hay afiliados registrados" description="Crea el primero o carga una base desde Excel/CSV." />
+            <EmptyState title="No hay afiliados registrados" description={modoGlobal ? 'Ninguna entidad tiene afiliados registrados todavía.' : 'Crea el primero o carga una base desde Excel/CSV.'} />
           ) : (
             <EmptyState title="Sin afiliados que coincidan" description="Ajusta los filtros o el término de búsqueda." />
           )
@@ -198,6 +262,7 @@ export default function AfiliadosList() {
                 <tr>
                   <th>Afiliado</th>
                   <th>Contacto</th>
+                  {modoGlobal && <th>Entidad</th>}
                   <th>Cupo</th>
                   <th>Estado</th>
                   <th></th>
@@ -216,6 +281,7 @@ export default function AfiliadosList() {
                       </div>
                     </td>
                     <td className="text-small">{a.correo}<div className="cell-muted">{a.telefono ?? '—'}</div></td>
+                    {modoGlobal && <td className="text-small">{a.cooperativa_nombre ?? '—'}</td>}
                     <td className="text-small">
                       {a.cupo_total != null ? (
                         <>
@@ -227,7 +293,7 @@ export default function AfiliadosList() {
                       )}
                     </td>
                     <td><StatusBadge status={a.estado} /></td>
-                    <td className="right"><Link to={`${base}/afiliados/${a.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver</Link></td>
+                    <td className="right">{!modoGlobal && <Link to={`${base}/afiliados/${a.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver</Link>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -239,7 +305,6 @@ export default function AfiliadosList() {
           <Pagination page={page} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${total} afiliados`} />
         )}
       </div>
-      )}
 
       <Modal
         open={uploadOpen}

@@ -99,7 +99,7 @@ export default function TransaccionDetail() {
             <Detail label="Unidades" value={trx.cantidad} />
             <Detail label="Subtotal" value={formatCOP(trx.subtotal)} />
             <Detail label="Total" value={formatCOP(trx.total)} />
-            <Detail label="Forma de pago" value={trx.metodo_pago === 'TARJETA' ? 'Tarjeta débito/crédito' : 'Cupo de la cooperativa'} />
+            <Detail label="Forma de pago" value={trx.metodo_pago === 'TARJETA' ? 'Tarjeta débito/crédito' : 'Cupo de la entidad'} />
             {trx.metodo_pago === 'CUPO' && <Detail label="Cuotas" value={trx.numero_cuotas} />}
             {trx.referencia_pago && <Detail label="Referencia de pago" value={trx.referencia_pago} />}
             <Detail label="Fecha y hora" value={formatDateTime(trx.created_at)} />
@@ -147,7 +147,7 @@ export default function TransaccionDetail() {
                 {documento.fecha_firma
                   ? `Firmado el ${formatDateTime(documento.fecha_firma)}.`
                   : `Generado el ${formatDateTime(documento.fecha_generacion)}, aún sin firmar.`}
-                {' '}Autoriza {cuotasLabel(trx.numero_cuotas)} sobre el cupo de la cooperativa.
+                {' '}Autoriza {cuotasLabel(trx.numero_cuotas)} sobre el cupo de la entidad.
               </p>
               <p className="text-caption cell-muted" style={{ marginTop: 0 }}>
                 La descarga del documento (Firebase Storage) no está conectada en esta integración.

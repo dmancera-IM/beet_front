@@ -20,6 +20,18 @@
 // una cooperativa pueda "elegir" convenios/productos que GES ya publicó,
 // igual que ya se hacía con `cooperativas`. Cuando exista backend real,
 // ambos universos serán la misma tabla en PostgreSQL.
+//
+// EXCEPCIÓN DELIBERADA Y DOCUMENTADA (ronda "Ganancia por convenio y precios
+// por producto"): el precio que el afiliado paga se calcula a partir del
+// precio al que GES le vende el producto a la entidad
+// (`precioVentaEntidad`, propiedad exclusiva de GES — ver gesData.js
+// PRODUCTOS), así que este módulo necesita leerlo en tiempo real para poder
+// calcularlo (ver `precioBeetDe` más abajo). Es la misma clase de excepción
+// puntual ya documentada en pages/admin/ges/SolicitudesTable.jsx (que
+// importa de mockDb.js en sentido contrario) — no un cambio de arquitectura
+// general: solo esta lectura, nunca al revés (gesData.js nunca importa de
+// aquí).
+import { getProducto as getProductoGes } from '../pages/admin/ges/gesData';
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -137,18 +149,28 @@ export const productosConvenio = [
 // `id_convenio` -> conveniosCatalogo.
 // ---------------------------------------------------------------------------
 
+// `porcentaje_ganancia_entidad`: el % de ganancia que la ENTIDAD (no cada
+// producto) configura para este convenio (sección 1/6 de "Ganancia por
+// convenio y precios por producto") — únicos valores permitidos: 5, 10 o
+// 15. TODOS los productos del convenio lo heredan automáticamente (nunca se
+// guarda un porcentaje distinto por producto, ver `precioBeetDe` más abajo).
+// `precio_normal`/`precio_beet` de esta fila son el resumen legado a nivel
+// de convenio que Lector/Súper admin y el catálogo del afiliado siguen
+// mostrando tal cual (ConveniosList.jsx, ConvenioDetail.jsx, etc. — fuera
+// de alcance de esta ronda); el precio real que ve cada afiliado, producto
+// por producto, vive en `cooperativaProductos` más abajo.
 export const cooperativasConvenios = [
   // fecha_fin en +3 días a propósito: Juan Pérez (afiliado 1) ya tiene
   // tickets entregados de este producto (ver `tickets` más abajo), así la
   // alerta de "tickets próximos a vencer" del portal tiene algo real que
   // mostrar en la demo (regla: vence en 7 días o menos, sección 7).
-  { id: 1, id_cooperativa: 1, id_convenio: 'cine-colombia', nombre: 'Cine Colombia', descripcion: 'Entradas 2D/3D válidas de lunes a viernes.', precio_normal: 18000, precio_beet: 12500, fecha_inicio: dateOnly(-120), fecha_fin: dateOnly(3), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
-  { id: 2, id_cooperativa: 1, id_convenio: 'mundo-aventura', nombre: 'Mundo Aventura', descripcion: 'Entrada general al parque.', precio_normal: 65000, precio_beet: 48000, fecha_inicio: dateOnly(-90), fecha_fin: dateOnly(200), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
-  { id: 3, id_cooperativa: 1, id_convenio: 'exito', nombre: 'Éxito', descripcion: 'Bono de mercado, válido en todo el país.', precio_normal: 50000, precio_beet: 46000, fecha_inicio: dateOnly(-200), fecha_fin: null, estado: true, plantilla_en_uso: 'Diseño oficial', imagen_marca_url: null },
-  { id: 4, id_cooperativa: 1, id_convenio: 'salitre-magico', nombre: 'Salitre Mágico', descripcion: 'Entrada general al parque de diversiones.', precio_normal: 55000, precio_beet: 39000, fecha_inicio: dateOnly(-30), fecha_fin: dateOnly(10), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
-  { id: 5, id_cooperativa: 1, id_convenio: 'spa-relax', nombre: 'Spa Relax', descripcion: 'Sesión de bienestar de una hora.', precio_normal: 90000, precio_beet: 70000, fecha_inicio: dateOnly(-400), fecha_fin: dateOnly(-30), estado: false, plantilla_en_uso: null, imagen_marca_url: null },
-  { id: 6, id_cooperativa: 2, id_convenio: 'cafe-central', nombre: 'Café Central', descripcion: 'Bono de desayuno o almuerzo.', precio_normal: 25000, precio_beet: 19000, fecha_inicio: dateOnly(-60), fecha_fin: null, estado: true, plantilla_en_uso: null, imagen_marca_url: null },
-  { id: 7, id_cooperativa: 2, id_convenio: 'teatro-nacional', nombre: 'Teatro Nacional', descripcion: 'Boleta general.', precio_normal: 40000, precio_beet: 30000, fecha_inicio: dateOnly(-10), fecha_fin: dateOnly(60), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
+  { id: 1, id_cooperativa: 1, id_convenio: 'cine-colombia', nombre: 'Cine Colombia', descripcion: 'Entradas 2D/3D válidas de lunes a viernes.', precio_normal: 18000, precio_beet: 12500, porcentaje_ganancia_entidad: 15, fecha_inicio: dateOnly(-120), fecha_fin: dateOnly(3), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
+  { id: 2, id_cooperativa: 1, id_convenio: 'mundo-aventura', nombre: 'Mundo Aventura', descripcion: 'Entrada general al parque.', precio_normal: 65000, precio_beet: 48000, porcentaje_ganancia_entidad: 10, fecha_inicio: dateOnly(-90), fecha_fin: dateOnly(200), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
+  { id: 3, id_cooperativa: 1, id_convenio: 'exito', nombre: 'Éxito', descripcion: 'Bono de mercado, válido en todo el país.', precio_normal: 50000, precio_beet: 46000, porcentaje_ganancia_entidad: 5, fecha_inicio: dateOnly(-200), fecha_fin: null, estado: true, plantilla_en_uso: 'Diseño oficial', imagen_marca_url: null },
+  { id: 4, id_cooperativa: 1, id_convenio: 'salitre-magico', nombre: 'Salitre Mágico', descripcion: 'Entrada general al parque de diversiones.', precio_normal: 55000, precio_beet: 39000, porcentaje_ganancia_entidad: 15, fecha_inicio: dateOnly(-30), fecha_fin: dateOnly(10), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
+  { id: 5, id_cooperativa: 1, id_convenio: 'spa-relax', nombre: 'Spa Relax', descripcion: 'Sesión de bienestar de una hora.', precio_normal: 90000, precio_beet: 70000, porcentaje_ganancia_entidad: 10, fecha_inicio: dateOnly(-400), fecha_fin: dateOnly(-30), estado: false, plantilla_en_uso: null, imagen_marca_url: null },
+  { id: 6, id_cooperativa: 2, id_convenio: 'cafe-central', nombre: 'Café Central', descripcion: 'Bono de desayuno o almuerzo.', precio_normal: 25000, precio_beet: 19000, porcentaje_ganancia_entidad: 15, fecha_inicio: dateOnly(-60), fecha_fin: null, estado: true, plantilla_en_uso: null, imagen_marca_url: null },
+  { id: 7, id_cooperativa: 2, id_convenio: 'teatro-nacional', nombre: 'Teatro Nacional', descripcion: 'Boleta general.', precio_normal: 40000, precio_beet: 30000, porcentaje_ganancia_entidad: 5, fecha_inicio: dateOnly(-10), fecha_fin: dateOnly(60), estado: true, plantilla_en_uso: null, imagen_marca_url: null },
   // cooperativa 3 (Horizonte) deliberately has zero convenios — demoes an
   // inactive/empty cooperativa in the switcher.
 ];
@@ -174,6 +196,24 @@ export function productosDeCooperativaConvenio(cc) {
 // de aquí, cada cooperativa edita esto de forma independiente por producto.
 // ---------------------------------------------------------------------------
 
+// Se siembra una fila por cada (cooperativa_convenio × producto), con
+// `precio_normal` propio por producto (sección 2: "los productos de un
+// convenio pueden tener precios diferentes" — ya NO se copia un único
+// precio_normal desde `cooperativasConvenios` para todos los productos del
+// convenio). Los dos productos de Cine Colombia (Entrada 2D/3D) usan
+// exactamente los valores del caso de validación de la definición
+// funcional (sección 12), para poder probarlo tal cual está documentado.
+const PRECIOS_NORMALES_SEED = {
+  1: 7000, // Cine Colombia · Entrada 2D
+  8: 9000, // Cine Colombia · Entrada 3D
+  2: 65000, // Mundo Aventura · Entrada General
+  3: 50000, // Éxito · Bono Mercado
+  4: 55000, // Salitre Mágico · Entrada General
+  5: 90000, // Spa Relax · Sesión de Bienestar
+  6: 25000, // Café Central · Bono Desayuno
+  7: 40000, // Teatro Nacional · Boleta General
+};
+
 export const cooperativaProductos = [];
 cooperativasConvenios.forEach((cc) => {
   productosConvenio
@@ -183,8 +223,7 @@ cooperativasConvenios.forEach((cc) => {
         id: newId('cooperativaProducto'),
         id_cooperativa: cc.id_cooperativa,
         id_producto: p.id,
-        precio_beet: cc.precio_beet,
-        precio_normal: cc.precio_normal,
+        precio_normal: PRECIOS_NORMALES_SEED[p.id] ?? cc.precio_normal,
         fecha_inicio: cc.fecha_inicio,
         fecha_fin: cc.fecha_fin,
         descripcion: p.descripcion,
@@ -197,21 +236,94 @@ export function cooperativaProductoDe(idCooperativa, idProducto) {
   return cooperativaProductos.find((cp) => cp.id_cooperativa === Number(idCooperativa) && cp.id_producto === Number(idProducto)) ?? null;
 }
 
+// Precio al que GES le vende ESTE producto a las entidades (sección 5) —
+// GES lo configura producto por producto en su propio catálogo (ver
+// gesData.js `PRODUCTOS[].precioVentaEntidad`), nunca por convenio. `null`
+// cuando GES todavía no lo ha configurado.
+export function precioGesEntidadDe(idProducto) {
+  return getProductoGes(idProducto)?.precioVentaEntidad ?? null;
+}
+
+// Precio para el afiliado = precio_ges_entidad × (1 + ganancia del convenio
+// / 100) (sección 3). El porcentaje de ganancia SIEMPRE es el del convenio
+// (`cooperativasConvenios.porcentaje_ganancia_entidad`, sección 1) — nunca
+// uno guardado por producto. Se calcula en cada lectura (no se cachea en
+// `cooperativaProductos`) para que un cambio de GES al precio de venta, o
+// un cambio de la entidad a la ganancia del convenio, se refleje de
+// inmediato en todos los productos del convenio sin tener que sincronizar
+// nada manualmente — es lo que hace que "todos los productos del convenio
+// hereden automáticamente" el porcentaje (sección 1).
+export function precioBeetDe(idCooperativa, idProducto) {
+  const producto = productoDe(idProducto);
+  if (!producto) return null;
+  const cc = cooperativasConvenios.find((c) => c.id_cooperativa === Number(idCooperativa) && c.id_convenio === producto.id_convenio);
+  const ganancia = cc?.porcentaje_ganancia_entidad;
+  const precioGes = precioGesEntidadDe(idProducto);
+  if (ganancia == null || precioGes == null) return null;
+  return Math.round(precioGes * (1 + ganancia / 100));
+}
+
 // Crea o actualiza la configuración de UN producto para UNA cooperativa
-// (precio para afiliados, vigencia, descripción, estado). ADMIN nunca edita
-// el producto del catálogo maestro de GES (`productosConvenio`) — solo
-// esta fila, que es exclusivamente de su cooperativa.
+// (precio normal, vigencia, descripción, estado). ADMIN nunca edita el
+// producto del catálogo maestro de GES (`productosConvenio`) ni el precio
+// para afiliados directamente — ese siempre se calcula (ver `precioBeetDe`)
+// a partir del precio GES→entidad (GES) y la ganancia del convenio (la
+// propia entidad, a nivel de convenio, nunca por producto).
 export function upsertCooperativaProducto(idCooperativa, idProducto, cambios) {
   let cp = cooperativaProductoDe(idCooperativa, idProducto);
   if (!cp) {
     cp = {
       id: newId('cooperativaProducto'), id_cooperativa: Number(idCooperativa), id_producto: Number(idProducto),
-      precio_beet: null, precio_normal: null, fecha_inicio: null, fecha_fin: null, descripcion: null, estado: false,
+      precio_normal: null, fecha_inicio: null, fecha_fin: null, descripcion: null, estado: false,
     };
     cooperativaProductos.push(cp);
   }
-  Object.assign(cp, cambios);
+  // precio_beet/porcentaje_ganancia nunca se aceptan directamente: el
+  // primero siempre se calcula (precioBeetDe) y el segundo pertenece al
+  // convenio, no al producto (ver setGananciaConvenio).
+  const { precio_beet, porcentaje_ganancia, ...resto } = cambios;
+  void precio_beet; void porcentaje_ganancia;
+  Object.assign(cp, resto);
   return cp;
+}
+
+// Porcentajes de ganancia permitidos para un convenio: de 5% en 5% hasta 50%.
+const PORCENTAJES_GANANCIA_VALIDOS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+
+// Configura la ganancia de LA ENTIDAD para un convenio completo (sección 1:
+// el porcentaje pertenece al convenio, no al producto). No hace falta
+// recalcular nada en `cooperativaProductos` porque `precioBeetDe` siempre
+// lee este valor en el momento: todos los productos del convenio "heredan"
+// el nuevo porcentaje de inmediato.
+export function setGananciaConvenio(cooperativaConvenioId, porcentaje) {
+  const cc = cooperativasConvenios.find((c) => c.id === Number(cooperativaConvenioId));
+  if (!cc) throw new Error('Convenio no encontrado.');
+  const n = Number(porcentaje);
+  if (!PORCENTAJES_GANANCIA_VALIDOS.includes(n)) throw new Error('El porcentaje de ganancia debe ser un múltiplo de 5%, entre 5% y 50%.');
+  cc.porcentaje_ganancia_entidad = n;
+  return cc;
+}
+
+// Un producto está "configurado" cuando ya tiene precio normal Y precio
+// para afiliados calculable (GES ya fijó su precio de venta a entidades Y
+// la entidad ya fijó la ganancia del convenio) — es el requisito mínimo
+// antes de poder activar el convenio completo (sección 2 de la ronda
+// anterior, sigue vigente).
+export function cooperativaProductoConfigurado(idCooperativa, idProducto) {
+  const cp = cooperativaProductoDe(idCooperativa, idProducto);
+  return cp != null && cp.precio_normal != null && precioBeetDe(idCooperativa, idProducto) != null;
+}
+
+// Compuerta de activación del convenio (sección 2 de la ronda anterior): un
+// convenio recién adquirido por la entidad llega DESACTIVADO y solo puede
+// activarse cuando al menos uno de sus productos ya fue configurado (precio
+// calculado). No inventa un estado nuevo — sigue siendo el mismo booleano
+// `estado` de cooperativas_convenios, solo se restringe cuándo puede pasar
+// a `true`.
+export function convenioListoParaActivar(cooperativaConvenio) {
+  return productosConvenio
+    .filter((p) => p.id_convenio === cooperativaConvenio.id_convenio)
+    .some((p) => cooperativaProductoConfigurado(cooperativaConvenio.id_cooperativa, p.id));
 }
 
 // Productos que una cooperativa realmente ofrece a sus afiliados: el
@@ -392,7 +504,7 @@ export function productoPublico(producto, cooperativaProducto, cooperativaConven
     nombre: producto.nombre,
     descripcion: cooperativaProducto.descripcion ?? producto.descripcion,
     convenio_nombre: cooperativaConvenio.nombre,
-    precio_beet: cooperativaProducto.precio_beet,
+    precio_beet: precioBeetDe(cooperativaProducto.id_cooperativa, producto.id),
     precio_normal: cooperativaProducto.precio_normal,
     fecha_inicio: cooperativaProducto.fecha_inicio,
     fecha_fin: cooperativaProducto.fecha_fin,

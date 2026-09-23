@@ -5,9 +5,10 @@ import Modal from '../../../components/ui/Modal';
 import { Field, Input, Switch } from '../../../components/ui/Field';
 import { IconPlus } from '../../../components/ui/Icons';
 import { EmptyState } from '../../../components/ui/States';
+import { formatCOP } from '../../../utils/format';
 import { useToast } from '../../../context/ToastContext';
 import GesNav from './GesNav';
-import { PROVEEDORES, agregarConvenioCatalogo, agregarProducto, getProductos, toggleConvenioCatalogo, toggleProducto } from './gesData';
+import { PROVEEDORES, agregarConvenioCatalogo, agregarProducto, getProductos, setPrecioVentaEntidad, toggleConvenioCatalogo, toggleProducto } from './gesData';
 
 // Catálogo maestro de convenios de BEET (sección 9): GES lo crea y
 // mantiene aquí; las cooperativas solo pueden seleccionar de esta lista
@@ -28,6 +29,14 @@ export default function ConveniosCatalogo() {
   const [nuevoProducto, setNuevoProducto] = useState('');
   const [productoError, setProductoError] = useState('');
   const [savingProducto, setSavingProducto] = useState(false);
+
+  // Precio al que GES le vende cada producto a las entidades (sección 5 de
+  // "Ganancia por convenio y precios por producto") — producto por
+  // producto, nunca un único precio por convenio.
+  const [precioProducto, setPrecioProducto] = useState(null);
+  const [precioValor, setPrecioValor] = useState('');
+  const [precioError, setPrecioError] = useState('');
+  const [savingPrecio, setSavingPrecio] = useState(false);
 
   // PROVEEDORES se muta in-place (push), nunca se reasigna — leerlo
   // directamente en cada render ya refleja los convenios agregados; solo
@@ -81,6 +90,32 @@ export default function ConveniosCatalogo() {
     setVersion((v) => v + 1);
   };
 
+  const abrirPrecio = (producto) => {
+    setPrecioProducto(producto);
+    setPrecioValor(producto.precioVentaEntidad != null ? String(producto.precioVentaEntidad) : '');
+    setPrecioError('');
+  };
+
+  const cerrarPrecio = () => {
+    if (savingPrecio) return;
+    setPrecioProducto(null);
+  };
+
+  const handleGuardarPrecio = (e) => {
+    e.preventDefault();
+    setSavingPrecio(true);
+    try {
+      setPrecioVentaEntidad(precioProducto.id, precioValor);
+      push({ title: 'Precio actualizado', description: `${precioProducto.nombre} · ${formatCOP(Number(precioValor))} por entidad` });
+      setPrecioProducto(null);
+      setVersion((v) => v + 1);
+    } catch (err) {
+      setPrecioError(err.message);
+    } finally {
+      setSavingPrecio(false);
+    }
+  };
+
   const handleAgregarProducto = (e) => {
     e.preventDefault();
     setSavingProducto(true);
@@ -102,7 +137,7 @@ export default function ConveniosCatalogo() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Convenios</h1>
-          <p className="page-subtitle">Catálogo maestro de convenios de BEET. Las cooperativas eligen de esta lista para asociarlos a su propio panel.</p>
+          <p className="page-subtitle">Catálogo maestro de convenios de BEET. Las entidades eligen de esta lista para asociarlos a su propio panel.</p>
         </div>
         <div className="page-header-actions">
           <Button icon={<IconPlus color="#fff" />} onClick={() => setFormOpen(true)}>Agregar convenio</Button>
@@ -113,7 +148,7 @@ export default function ConveniosCatalogo() {
 
       <div className="table-card">
         {catalogo.length === 0 ? (
-          <EmptyState title="Sin convenios en el catálogo" description="Agrega el primer convenio para que las cooperativas puedan seleccionarlo." />
+          <EmptyState title="Sin convenios en el catálogo" description="Agrega el primer convenio para que las entidades puedan seleccionarlo." />
         ) : (
           <div className="table-scroll">
             <table className="data-table">
@@ -163,6 +198,7 @@ export default function ConveniosCatalogo() {
       <Modal
         open={!!productosConvenio}
         onClose={cerrarProductos}
+        size="xl"
         title={productosConvenio ? `Productos · ${productosConvenio.nombre}` : ''}
         actions={<Button variant="secondary" onClick={cerrarProductos}>Cerrar</Button>}
       >
@@ -176,15 +212,23 @@ export default function ConveniosCatalogo() {
                   <thead>
                     <tr>
                       <th>Producto</th>
+                      <th className="right">Precio de venta a entidades</th>
                       <th>Estado</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {getProductos(productosConvenio.id).map((prod) => (
                       <tr key={prod.id}>
                         <td className="cell-primary">{prod.nombre}</td>
+                        <td className="right tabular">{prod.precioVentaEntidad != null ? formatCOP(prod.precioVentaEntidad) : 'Sin configurar'}</td>
                         <td>
                           <Switch label={prod.estado ? 'Activo' : 'Inactivo'} checked={prod.estado} onChange={() => handleToggleProducto(prod)} />
+                        </td>
+                        <td className="right">
+                          <Button size="sm" variant="secondary" onClick={() => abrirPrecio(prod)}>
+                            {prod.precioVentaEntidad != null ? 'Editar precio' : 'Configurar precio'}
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -201,6 +245,28 @@ export default function ConveniosCatalogo() {
               <Button type="submit" loading={savingProducto}>Agregar</Button>
             </form>
           </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!precioProducto}
+        onClose={cerrarPrecio}
+        title="Configurar precio del producto"
+        actions={
+          <>
+            <Button variant="secondary" onClick={cerrarPrecio} disabled={savingPrecio}>Cancelar</Button>
+            <Button onClick={handleGuardarPrecio} loading={savingPrecio}>Guardar</Button>
+          </>
+        }
+      >
+        {precioProducto && (
+          <form onSubmit={handleGuardarPrecio}>
+            <div className="text-caption cell-muted" style={{ marginBottom: 2 }}>{productosConvenio?.nombre}</div>
+            <div className="text-h2" style={{ marginBottom: 16 }}>{precioProducto.nombre}</div>
+            <Field label="Precio de venta a entidades" error={precioError} hint="Lo que GES le cobra a cada entidad por este producto — no un único precio por convenio.">
+              <Input type="number" min="0" value={precioValor} onChange={(e) => { setPrecioValor(e.target.value); setPrecioError(''); }} placeholder="4000" />
+            </Field>
+          </form>
         )}
       </Modal>
     </div>

@@ -15,7 +15,11 @@ import ConveniosCatalogo from './pages/admin/ges/ConveniosCatalogo';
 import Storage from './pages/admin/ges/Storage';
 import ComprarBonos from './pages/admin/ges/ComprarBonos';
 import GesTransacciones from './pages/admin/ges/GesTransacciones';
+import GesB2B from './pages/admin/ges/GesB2B';
+import GesConfiguracion from './pages/admin/ges/Configuracion';
 import ComprarBonosGes from './pages/admin/ComprarBonosGes';
+import B2BForm from './pages/admin/b2b/B2BForm';
+import BolsaCredito from './pages/admin/BolsaCredito';
 import ConveniosList from './pages/admin/convenios/ConveniosList';
 import ConvenioForm from './pages/admin/convenios/ConvenioForm';
 import ConvenioDetail from './pages/admin/convenios/ConvenioDetail';
@@ -32,7 +36,6 @@ import Reportes from './pages/admin/reportes/Reportes';
 // usan arriba (mismos componentes de siempre, sin cambios).
 import ConveniosListAdmin from './pages/admin/convenios/ConveniosListAdmin';
 import ConvenioDetailAdmin from './pages/admin/convenios/ConvenioDetailAdmin';
-import ProductoConfigForm from './pages/admin/convenios/ProductoConfigForm';
 import AfiliadosListAdmin from './pages/admin/afiliados/AfiliadosListAdmin';
 import AfiliadoDetailAdmin from './pages/admin/afiliados/AfiliadoDetailAdmin';
 import TransaccionesListAdmin from './pages/admin/transacciones/TransaccionesListAdmin';
@@ -47,11 +50,11 @@ import PortalHome from './pages/portal/PortalHome';
 import Catalogo from './pages/portal/Catalogo';
 import BenefitDetail from './pages/portal/BenefitDetail';
 import Profile from './pages/portal/Profile';  //perfil afiliado
-import MiCupo from './pages/portal/MiCupo';
 import PortalRegister from './pages/portal/PortalRegister';
 import PurchaseFlow from './pages/portal/PurchaseFlow';
 import MyTickets from './pages/portal/MyTickets';
 import TicketDetail from './pages/portal/TicketDetail';
+import Notificaciones from './pages/portal/Notificaciones';
 import EditProfile from './pages/portal/EditProfile';
 import PortalNotFound from './pages/portal/PortalNotFound'; //pafina de error portalafiliadd
 
@@ -116,6 +119,8 @@ export default function App() {
         <Route path="storage" element={<Storage />} />
         <Route path="compras" element={<ComprarBonos />} />
         <Route path="transacciones" element={<GesTransacciones />} />
+        <Route path="b2b" element={<GesB2B />} />
+        <Route path="configuracion" element={<GesConfiguracion />} />
         <Route path="*" element={<NotFound />} />
       </Route>
 
@@ -151,15 +156,19 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="convenios" element={<ConveniosListAdmin />} />
         <Route path="convenios/:id" element={<ConvenioDetailAdmin />} />
-        <Route path="convenios/:id/productos/:productoId" element={<ProductoConfigForm />} />
         <Route path="afiliados" element={<AfiliadosListAdmin />} />
         <Route path="afiliados/:id" element={<AfiliadoDetailAdmin />} />
+        <Route path="b2b" element={<B2BForm />} />
         <Route path="transacciones" element={<TransaccionesListAdmin />} />
         <Route path="reportes" element={<Reportes />} />
         <Route path="documentos-legales" element={<DocumentosLegales />} />
         <Route path="configuracion" element={<Configuracion />} />
         {/* Solo el formulario de solicitud — nunca el panel completo de GES. */}
         <Route path="ges" element={<ComprarBonosGes />} />
+        {/* "GES" y "B2B" se fusionaron visualmente en "Bolsa / Crédito"
+            (ver Sidebar.jsx) — las rutas originales se mantienen montadas
+            para no romper accesos directos existentes. */}
+        <Route path="bolsa-credito" element={<BolsaCredito />} />
         <Route path="*" element={<NotFound />} />
       </Route>
 
@@ -190,12 +199,12 @@ export default function App() {
         <Route index element={<PortalHome />} />
         <Route path="catalogo" element={<Catalogo />} />
         <Route path="catalogo/:id" element={<BenefitDetail />} />
-        <Route path="cupo" element={<MiCupo />} />
         <Route path="perfil" element={<Profile />} />
         <Route path="perfil/editar" element={<EditProfile />} />
         <Route path="comprar/:id" element={<PurchaseFlow />} />
         <Route path="tickets" element={<MyTickets />} />
         <Route path="tickets/:id" element={<TicketDetail />} />
+        <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="*" element={<PortalNotFound />} />
       </Route>
 

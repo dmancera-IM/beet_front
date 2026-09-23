@@ -22,7 +22,7 @@ import { formatCOP, percent } from '../../../utils/format';
 import { useToast } from '../../../context/ToastContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
-const emptyCreateForm = { nombres: '', apellidos: '', documento: '', correo: '', telefono: '' };
+const emptyCreateForm = { nombres: '', apellidos: '', documento: '', correo: '', telefono: '', cupoAsignado: '' };
 
 // Afiliados para ADMIN (secciones 7 y 8): concentra la administración de
 // afiliados y la gestión de cupo (asignado, consumo, disponible) en un
@@ -141,13 +141,17 @@ export default function AfiliadosListAdmin() {
         correo: createForm.correo.trim(),
         telefono: createForm.telefono.trim() || null,
       });
+      const cupoInicial = Number(createForm.cupoAsignado);
+      if (cupoInicial > 0) {
+        await cuposService.actualizarCupo(nuevo.id, { cupo_total: cupoInicial });
+      }
       push({ title: 'Afiliado creado', description: `${nuevo.nombres} ${nuevo.apellidos}` });
       setCreateOpen(false);
       setCreateForm(emptyCreateForm);
       cargar();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setCreateErrors({ documento: 'Ya existe un afiliado con ese documento en esta cooperativa.' });
+        setCreateErrors({ documento: 'Ya existe un afiliado con ese documento en esta entidad.' });
       } else {
         push({ title: 'No se pudo crear el afiliado', description: err.message, variant: 'error' });
       }
@@ -186,7 +190,7 @@ export default function AfiliadosListAdmin() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Afiliados</h1>
-          <p className="page-subtitle">Base de afiliados de tu cooperativa, junto con el cupo de crédito de cada uno.</p>
+          <p className="page-subtitle">Base de afiliados de tu entidad, junto con el cupo de crédito de cada uno.</p>
         </div>
         <div className="page-header-actions">
           <Button variant="secondary" icon={<IconDescargar size={15} color="#1F2937" />} loading={exporting} onClick={handleExport}>Exportar</Button>
@@ -346,6 +350,9 @@ export default function AfiliadosListAdmin() {
           <Field label="Teléfono" optional>
             <Input value={createForm.telefono} onChange={(e) => setCreateForm((f) => ({ ...f, telefono: e.target.value }))} placeholder="3005124471" />
           </Field>
+          <Field label="Cupo asignado" optional hint="Cupo de crédito disponible para este afiliado. Puedes dejarlo vacío y asignarlo después.">
+            <Input type="number" min="0" step="10000" value={createForm.cupoAsignado} onChange={(e) => setCreateForm((f) => ({ ...f, cupoAsignado: e.target.value }))} placeholder="500000" />
+          </Field>
         </form>
       </Modal>
 
@@ -360,7 +367,7 @@ export default function AfiliadosListAdmin() {
         open={!!deleteTarget}
         onClose={() => !deleting && setDeleteTarget(null)}
         title={deleteTarget ? `¿Eliminar a ${deleteTarget.nombres} ${deleteTarget.apellidos}?` : ''}
-        description="Esta acción elimina permanentemente al afiliado de tu cooperativa. Puedes cancelar sin eliminar nada."
+        description="Esta acción elimina permanentemente al afiliado de tu entidad. Puedes cancelar sin eliminar nada."
         confirmLabel="Confirmar eliminación"
         loading={deleting}
         onConfirm={eliminarAfiliado}

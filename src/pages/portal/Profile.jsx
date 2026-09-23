@@ -47,7 +47,7 @@ export default function Profile() {
             <Row label="Documento" value={afiliado.documento} />
             <Row label="Correo electrónico" value={afiliado.correo} />
             <Row label="Teléfono" value={afiliado.telefono} />
-            <Row label="Cooperativa" value={afiliado.cooperativa_nombre} />
+            <Row label="Entidad" value={afiliado.cooperativa_nombre} />
           </div>
           <Button variant="secondary" style={{ marginTop: 16 }} onClick={() => navigate('/portal/perfil/editar')}>
             Editar datos de contacto
@@ -66,7 +66,7 @@ export default function Profile() {
         ) : (
           <Card>
             <div className="text-label" style={{ marginBottom: 10 }}>Cupo de crédito</div>
-            <div className="text-small cell-muted">Tu cooperativa aún no te ha asignado un cupo de crédito.</div>
+            <div className="text-small cell-muted">Tu entidad aún no te ha asignado un cupo de crédito.</div>
           </Card>
         )}
       </div>

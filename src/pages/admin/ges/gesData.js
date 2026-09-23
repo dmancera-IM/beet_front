@@ -16,14 +16,21 @@
 // getProveedores() (o iterar este mismo array, que se muta in-place con
 // push, nunca se reasigna) en vez de guardar una copia en el momento del
 // import.
+// `imagen` (identidad visual) y `plantillaPdf` (diseño del PDF) pertenecen
+// AL CONVENIO, nunca a un producto suyo — ver GES → Configuración
+// (Configuracion.jsx). Los productos de un mismo convenio (ej. Cine
+// Colombia → Entrada 2D/3D) comparten siempre la misma imagen y la misma
+// plantilla; jamás se configura una por producto. `imagen`: data URL o
+// `null` (sin configurar → placeholder de líneas cruzadas). `plantillaPdf`:
+// `{ nombre, estado }` o `null` (sin configurar todavía).
 export const PROVEEDORES = [
-  { id: 'cine-colombia', nombre: 'Cine Colombia', estado: true },
-  { id: 'mundo-aventura', nombre: 'Mundo Aventura', estado: true },
-  { id: 'exito', nombre: 'Éxito', estado: true },
-  { id: 'salitre-magico', nombre: 'Salitre Mágico', estado: false },
-  { id: 'cafe-central', nombre: 'Café Central', estado: true },
-  { id: 'teatro-nacional', nombre: 'Teatro Nacional', estado: true },
-  { id: 'spa-relax', nombre: 'Spa Relax', estado: true },
+  { id: 'cine-colombia', nombre: 'Cine Colombia', estado: true, imagen: null, plantillaPdf: { nombre: 'Plantilla Cine Colombia.pdf', estado: 'ACTIVA' } },
+  { id: 'mundo-aventura', nombre: 'Mundo Aventura', estado: true, imagen: null, plantillaPdf: null },
+  { id: 'exito', nombre: 'Éxito', estado: true, imagen: null, plantillaPdf: { nombre: 'Plantilla Exito.pdf', estado: 'ACTIVA' } },
+  { id: 'salitre-magico', nombre: 'Salitre Mágico', estado: false, imagen: null, plantillaPdf: null },
+  { id: 'cafe-central', nombre: 'Café Central', estado: true, imagen: null, plantillaPdf: null },
+  { id: 'teatro-nacional', nombre: 'Teatro Nacional', estado: true, imagen: null, plantillaPdf: null },
+  { id: 'spa-relax', nombre: 'Spa Relax', estado: true, imagen: null, plantillaPdf: null },
 ];
 
 export function getProveedores() {
@@ -34,18 +41,39 @@ export function getProveedores() {
 // comprar y entregar (sección 7). Un producto pertenece a UN convenio; un
 // convenio puede tener varios productos (ej. Cine Colombia → Entrada 2D /
 // Entrada 3D). `productoId` es único en todo el catálogo.
+// `precioVentaEntidad`: lo que GES le cobra a las entidades por este
+// producto (sección 5 de "Ganancia por convenio y precios por producto") —
+// se configura producto por producto, NUNCA un único precio por convenio
+// (cada producto de un mismo convenio puede costarle distinto a GES). Es la
+// base del cálculo del precio para el afiliado en el panel de cada entidad
+// (ver services/mockDb.js `precioBeetDe`): precio_afiliado = precioVentaEntidad
+// × (1 + porcentaje_ganancia_entidad / 100). `null` = todavía sin configurar
+// por GES (el producto 9, Bono Pan, se deja así a propósito para poder
+// demostrar ese estado).
 let nextProductoId = 100;
 export const PRODUCTOS = [
-  { id: 1, proveedorId: 'cine-colombia', nombre: 'Entrada 2D', estado: true },
-  { id: 8, proveedorId: 'cine-colombia', nombre: 'Entrada 3D', estado: true },
-  { id: 2, proveedorId: 'mundo-aventura', nombre: 'Entrada General', estado: true },
-  { id: 3, proveedorId: 'exito', nombre: 'Bono Mercado', estado: true },
-  { id: 9, proveedorId: 'exito', nombre: 'Bono Pan', estado: true },
-  { id: 4, proveedorId: 'salitre-magico', nombre: 'Entrada General', estado: true },
-  { id: 5, proveedorId: 'spa-relax', nombre: 'Sesión de Bienestar', estado: true },
-  { id: 6, proveedorId: 'cafe-central', nombre: 'Bono Desayuno', estado: true },
-  { id: 7, proveedorId: 'teatro-nacional', nombre: 'Boleta General', estado: true },
+  { id: 1, proveedorId: 'cine-colombia', nombre: 'Entrada 2D', estado: true, precioVentaEntidad: 4000 },
+  { id: 8, proveedorId: 'cine-colombia', nombre: 'Entrada 3D', estado: true, precioVentaEntidad: 5000 },
+  { id: 2, proveedorId: 'mundo-aventura', nombre: 'Entrada General', estado: true, precioVentaEntidad: 44000 },
+  { id: 3, proveedorId: 'exito', nombre: 'Bono Mercado', estado: true, precioVentaEntidad: 44000 },
+  { id: 9, proveedorId: 'exito', nombre: 'Bono Pan', estado: true, precioVentaEntidad: null },
+  { id: 4, proveedorId: 'salitre-magico', nombre: 'Entrada General', estado: true, precioVentaEntidad: 34000 },
+  { id: 5, proveedorId: 'spa-relax', nombre: 'Sesión de Bienestar', estado: true, precioVentaEntidad: 64000 },
+  { id: 6, proveedorId: 'cafe-central', nombre: 'Bono Desayuno', estado: true, precioVentaEntidad: 17000 },
+  { id: 7, proveedorId: 'teatro-nacional', nombre: 'Boleta General', estado: true, precioVentaEntidad: 29000 },
 ];
+
+// Configura (o corrige) el precio al que GES le vende este producto a las
+// entidades. Producto por producto, nunca a nivel de convenio — dos
+// productos del mismo convenio pueden costarle distinto a GES (sección 5).
+export function setPrecioVentaEntidad(productoId, precio) {
+  const p = getProducto(productoId);
+  if (!p) throw new Error('Producto no encontrado.');
+  const n = Number(precio);
+  if (!n || n <= 0) throw new Error('El precio de venta a entidades debe ser mayor a 0.');
+  p.precioVentaEntidad = n;
+  return p;
+}
 
 export function getProductos(proveedorId) {
   return PRODUCTOS.filter((p) => p.proveedorId === proveedorId);
@@ -60,11 +88,15 @@ export function getProducto(productoId) {
 // "GES puede crear convenios/productos"). Todavía no se definen precios ni
 // condiciones acá: eso lo configura cada cooperativa por su lado
 // (cooperativas_convenios).
+// El producto nace INACTIVO: hasta que no se configure correctamente su
+// precio (ver setPrecioVentaEntidad y, del lado de la entidad,
+// services/mockDb.js `precioBeetDe`) no debe quedar disponible — no se
+// activa automáticamente al crearlo.
 export function agregarProducto({ proveedorId, nombre }) {
   const limpio = (nombre || '').trim();
   if (!limpio) throw new Error('El nombre del producto es obligatorio.');
   if (!proveedorId) throw new Error('Selecciona un convenio.');
-  const nuevo = { id: nextProductoId++, proveedorId, nombre: limpio, estado: true };
+  const nuevo = { id: nextProductoId++, proveedorId, nombre: limpio, estado: false, precioVentaEntidad: null };
   PRODUCTOS.push(nuevo);
   return nuevo;
 }
@@ -91,9 +123,45 @@ export function agregarConvenioCatalogo(nombre) {
   if (!limpio) throw new Error('El nombre del convenio es obligatorio.');
   let id = slugify(limpio) || `convenio-${Date.now()}`;
   if (PROVEEDORES.some((p) => p.id === id)) id = `${id}-${Date.now()}`;
-  const nuevo = { id, nombre: limpio, estado: true };
+  const nuevo = { id, nombre: limpio, estado: true, imagen: null, plantillaPdf: null };
   PROVEEDORES.push(nuevo);
   return nuevo;
+}
+
+// Imagen de identidad visual del CONVENIO (sección "Imagen del beneficio")
+// — nunca por producto. Se usará para las tarjetas/beneficios que ve el
+// afiliado; si es `null`, esas tarjetas muestran el placeholder de líneas
+// cruzadas que ya existía.
+export function setImagenConvenio(proveedorId, dataUrl) {
+  const p = PROVEEDORES.find((x) => x.id === proveedorId);
+  if (!p) throw new Error('Convenio no encontrado.');
+  p.imagen = dataUrl;
+  return p;
+}
+
+// Plantilla PDF del CONVENIO (sección "Plantilla PDF") — UNA sola por
+// convenio, nunca una por producto: todos los productos de este convenio
+// (Boleta 2D, Boleta 3D, Combo, etc.) la comparten al generar su PDF.
+export function setPlantillaConvenio(proveedorId, { nombre, blobUrl }) {
+  const p = PROVEEDORES.find((x) => x.id === proveedorId);
+  if (!p) throw new Error('Convenio no encontrado.');
+  p.plantillaPdf = { nombre, estado: 'ACTIVA', blobUrl: blobUrl ?? null };
+  return p;
+}
+
+// Forma que consume GES → Configuración (Configuracion.jsx): un convenio
+// con su imagen, su única plantilla PDF, y la lista de productos que le
+// pertenecen (solo id/nombre — los productos no tienen imagen ni plantilla
+// propias, ver notas junto a PROVEEDORES arriba).
+export function getConveniosConProductos() {
+  return PROVEEDORES.map((p) => ({
+    idConvenio: p.id,
+    nombre: p.nombre,
+    estado: p.estado,
+    imagen: p.imagen,
+    plantillaPdf: p.plantillaPdf,
+    productos: getProductos(p.id).map((prod) => ({ id: prod.id, nombre: prod.nombre })),
+  }));
 }
 
 // Activa/desactiva un convenio en el catálogo MAESTRO de GES — independiente
@@ -134,26 +202,37 @@ sembrarStorage(6, 'CAF', 250, 150); // Café Central · Bono Desayuno
 sembrarStorage(7, 'TEA', 200, 50); // Teatro Nacional · Boleta General
 // spa-relax (producto 5) deliberadamente sin Storage todavía.
 
-// Dinero mock que GES tiene disponible para comprarle bonos/boletas a sus
-// proveedores. Puramente informativo — no hay pagos, pasarela ni reglas de
-// crédito/bolsa reales todavía (ver ComprarBonos.jsx).
-let dineroDisponibleParaCompras = 50_000_000;
-
-export function getDineroDisponibleParaCompras() {
-  return dineroDisponibleParaCompras;
-}
-
 // Mismas 3 cooperativas que services/mockDb.js (id/nombre coinciden a
 // propósito), para que la vista de GES y el panel de cada cooperativa
 // hablen de las mismas entidades — GES sigue siendo un mock 100% aislado,
 // esto es solo coincidencia de nombres/ids para que la demo sea coherente.
-// `cupoDisponible`/`cupoGastado` son el cupo contratado por la cooperativa
-// con GES — mock puro, sin reglas financieras reales todavía.
+//
+// Bolsa y Crédito son dos conceptos independientes, NUNCA mezclados
+// (ronda "Corrección visual de Bolsa/Crédito"). Cada uno guarda solo sus
+// dos valores base; el "disponible" de cada uno SIEMPRE se calcula con
+// `bolsaDisponible()`/`creditoDisponible()` (más abajo) — nunca se
+// duplica un tercer campo que pueda desincronizarse:
+//   `bolsa.valor`: monto de bolsa comprado/configurado para esta
+//     cooperativa. `bolsa.consumido`: cuánto de esa bolsa ya se gastó.
+//   `credito.cupoAutorizado`: el LÍMITE máximo que GES le autorizó a la
+//     cooperativa (no un saldo ya usado). `credito.utilizado`: cuánto
+//     crédito ya solicitó/usó la cooperativa dentro de ese límite.
+// Mock puro, sin tasas, intereses, cuotas, mora ni plazos todavía.
 let cooperativas = [
-  { id: 1, nombre: 'Cooperativa Bienestar', estado: 'Activa', fechaCreacion: '2022-03-14', afiliados: 4, cupoDisponible: 15_000_000, cupoGastado: 5_000_000 },
-  { id: 2, nombre: 'Cooperativa Unión', estado: 'Activa', fechaCreacion: '2023-01-10', afiliados: 2, cupoDisponible: 8_000_000, cupoGastado: 2_000_000 },
-  { id: 3, nombre: 'Cooperativa Horizonte', estado: 'Inactiva', fechaCreacion: '2024-02-01', afiliados: 0, cupoDisponible: 0, cupoGastado: 0 },
+  { id: 1, nombre: 'Cooperativa Bienestar', estado: 'Activa', fechaCreacion: '2022-03-14', afiliados: 4, bolsa: { valor: 10_000_000, consumido: 3_000_000 }, credito: { cupoAutorizado: 10_000_000, utilizado: 4_000_000 } },
+  { id: 2, nombre: 'Cooperativa Unión', estado: 'Activa', fechaCreacion: '2023-01-10', afiliados: 2, bolsa: { valor: 8_000_000, consumido: 2_000_000 }, credito: { cupoAutorizado: 8_000_000, utilizado: 2_000_000 } },
+  { id: 3, nombre: 'Cooperativa Horizonte', estado: 'Inactiva', fechaCreacion: '2024-02-01', afiliados: 0, bolsa: { valor: 0, consumido: 0 }, credito: { cupoAutorizado: 0, utilizado: 0 } },
 ];
+
+// Únicas funciones que calculan "disponible" para Bolsa y Crédito — todo
+// el resto del código (GES y ADMIN) debe usar estas, nunca restar a mano,
+// para que las dos modalidades no se desincronicen entre pantallas.
+export function bolsaDisponible(bolsa) {
+  return Math.max(0, (bolsa?.valor ?? 0) - (bolsa?.consumido ?? 0));
+}
+export function creditoDisponible(credito) {
+  return Math.max(0, (credito?.cupoAutorizado ?? 0) - (credito?.utilizado ?? 0));
+}
 
 // Una fila por combinación (cooperativa, producto): cuánto Storage le ha
 // asignado GES a esa cooperativa hasta ahora (`cantidad`) y cuánto de eso
@@ -180,13 +259,19 @@ let asignaciones = [
 // (la operación todavía no puede completarse, ej. no hay inventario
 // suficiente) y "Completada" (ya se realizó y el inventario correspondiente
 // fue asignado/vendido). Nunca "Aprobada"/"Rechazada"/"Disponible".
+// `prioridad` ('Normal' | 'Alta'): las de prioridad Alta vienen del nuevo
+// formulario B2B (sección 6/7 de la ronda de ajustes) — compra rápida de
+// una entidad. No es un estado nuevo de la transacción (`estado` sigue
+// siendo únicamente Pendiente/Completada); es solo una etiqueta adicional
+// para poder listarlas por separado en GES → B2B.
 let solicitudes = [
-  { id: 'sol-1', cooperativaId: 1, productoId: 1, cantidad: 1000, estado: 'Completada', fecha: '2026-09-10', administrador: 'Carlos Gómez', formaPago: 'Cupo' },
-  { id: 'sol-2', cooperativaId: 2, productoId: 2, cantidad: 200, estado: 'Completada', fecha: '2026-08-15', administrador: 'Andrés Ruiz', formaPago: 'Crédito' },
-  { id: 'sol-3', cooperativaId: 1, productoId: 3, cantidad: 200, estado: 'Pendiente', fecha: '2026-09-08', administrador: 'Carlos Gómez', formaPago: 'Cupo' },
-  { id: 'sol-4', cooperativaId: 1, productoId: 4, cantidad: 150, estado: 'Pendiente', fecha: '2026-08-28', administrador: 'Carlos Gómez', formaPago: 'Crédito' },
-  { id: 'sol-5', cooperativaId: 2, productoId: 1, cantidad: 300, estado: 'Completada', fecha: '2026-09-01', administrador: 'Andrés Ruiz', formaPago: 'Cupo' },
-  { id: 'sol-6', cooperativaId: 2, productoId: 3, cantidad: 50, estado: 'Completada', fecha: '2026-07-30', administrador: 'Andrés Ruiz', formaPago: 'Crédito' },
+  { id: 'sol-1', cooperativaId: 1, productoId: 1, cantidad: 1000, estado: 'Completada', fecha: '2026-09-10', administrador: 'Carlos Gómez', formaPago: 'Cupo', prioridad: 'Normal' },
+  { id: 'sol-2', cooperativaId: 2, productoId: 2, cantidad: 200, estado: 'Completada', fecha: '2026-08-15', administrador: 'Andrés Ruiz', formaPago: 'Crédito', prioridad: 'Normal' },
+  { id: 'sol-3', cooperativaId: 1, productoId: 3, cantidad: 200, estado: 'Pendiente', fecha: '2026-09-08', administrador: 'Carlos Gómez', formaPago: 'Cupo', prioridad: 'Normal' },
+  { id: 'sol-4', cooperativaId: 1, productoId: 4, cantidad: 150, estado: 'Pendiente', fecha: '2026-08-28', administrador: 'Carlos Gómez', formaPago: 'Crédito', prioridad: 'Normal' },
+  { id: 'sol-5', cooperativaId: 2, productoId: 1, cantidad: 300, estado: 'Completada', fecha: '2026-09-01', administrador: 'Andrés Ruiz', formaPago: 'Cupo', prioridad: 'Normal' },
+  { id: 'sol-6', cooperativaId: 2, productoId: 3, cantidad: 50, estado: 'Completada', fecha: '2026-07-30', administrador: 'Andrés Ruiz', formaPago: 'Crédito', prioridad: 'Normal' },
+  { id: 'sol-7', cooperativaId: 1, productoId: 1, cantidad: 10, estado: 'Completada', fecha: '2026-09-15', administrador: 'Carlos Gómez', formaPago: 'Cupo', prioridad: 'Alta' },
 ];
 
 // Usuarios administradores que GES creó directamente para una cooperativa
@@ -265,25 +350,41 @@ export function getCooperativa(id) {
   return getCooperativas().find((c) => c.id == id) ?? null;
 }
 
-// Crea una cooperativa desde GES (sección 7). Vive únicamente en el mock de
-// GES — no toca services/mockDb.js, así que no aparece en el panel de
-// Súper admin (esa pantalla queda intacta, sección 23). El cupo es
-// opcional: una cooperativa se puede crear sin cupo contratado todavía.
-export function crearCooperativaGes({ nombre, cupo }) {
+// Crea una cooperativa desde GES. Vive únicamente en el mock de GES — no
+// toca services/mockDb.js, así que no aparece en el panel de Súper admin
+// (esa pantalla queda intacta). Bolsa y cupo de crédito son dos campos
+// independientes y opcionales — nunca el antiguo "cupo contratado" único
+// (ver sección "Aclaración importante sobre los dos campos"): una
+// cooperativa puede crearse sin ninguno de los dos todavía.
+export function crearCooperativaGes({ nombre, bolsa, cupoCredito }) {
   const limpio = nombre.trim();
-  if (!limpio) throw new Error('El nombre de la cooperativa es obligatorio.');
+  if (!limpio) throw new Error('El nombre de la entidad es obligatorio.');
   const nuevaId = cooperativas.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+  const valorBolsa = Number(bolsa) > 0 ? Number(bolsa) : 0;
+  const cupoAutorizado = Number(cupoCredito) > 0 ? Number(cupoCredito) : 0;
   const nueva = {
     id: nuevaId,
     nombre: limpio,
     estado: 'Activa',
     fechaCreacion: hoyISO(),
     afiliados: 0,
-    cupoDisponible: Number(cupo) > 0 ? Number(cupo) : 0,
-    cupoGastado: 0,
+    bolsa: { valor: valorBolsa, consumido: 0 },
+    credito: { cupoAutorizado, utilizado: 0 },
   };
   cooperativas.push(nueva);
   return nueva;
+}
+
+// Aumenta el cupo máximo de crédito autorizado por GES (sección "GES →
+// Cupo de crédito"). Solo mueve `credito.cupoAutorizado` — nunca toca
+// `credito.utilizado` ni la bolsa de la cooperativa.
+export function aumentarCupoCreditoGes(cooperativaId, nuevoCupo) {
+  const c = cooperativas.find((x) => x.id === Number(cooperativaId));
+  if (!c) throw new Error('Entidad no encontrada.');
+  const valor = Number(nuevoCupo);
+  if (!(valor > 0)) throw new Error('El nuevo cupo debe ser mayor a 0.');
+  c.credito.cupoAutorizado = valor;
+  return c;
 }
 
 // Registra (solo del lado de GES, ver nota de crearCooperativaGes) un
@@ -294,7 +395,7 @@ export function crearUsuarioAdminGes({ nombre, correo, cooperativaId }) {
   const correoLimpio = correo.trim();
   if (!nombreLimpio) throw new Error('El nombre es obligatorio.');
   if (!correoLimpio) throw new Error('El correo es obligatorio.');
-  if (!cooperativaId) throw new Error('Selecciona la cooperativa de este usuario.');
+  if (!cooperativaId) throw new Error('Selecciona la entidad de este usuario.');
   const usuario = {
     id: `ges-user-${Date.now()}`,
     nombre: nombreLimpio,
@@ -343,9 +444,50 @@ export function getSolicitudes() {
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 }
 
+// Dinero que GES ha ganado vendiéndole bonos/boletas a las entidades
+// (precio de venta a entidades × cantidad, solo transacciones Completadas)
+// — reemplaza al antiguo "dinero disponible para comprar al proveedor"
+// (sección "Cambiar Comprar bonos y boletas"): GES no compra directamente
+// al proveedor desde este flujo, así que este KPI representa ingresos por
+// ventas, no un fondo de compra.
+export function getDineroGanadoPorVentas() {
+  return solicitudes
+    .filter((s) => s.estado === 'Completada')
+    .reduce((sum, s) => {
+      const producto = getProducto(s.productoId);
+      return sum + s.cantidad * (producto?.precioVentaEntidad ?? 0);
+    }, 0);
+}
+
 export function getSolicitudesPorCooperativa(cooperativaId) {
   // eslint-disable-next-line eqeqeq
   return getSolicitudes().filter((s) => s.cooperativaId == cooperativaId);
+}
+
+// Solicitudes de prioridad Alta únicamente — GES → B2B (sección 6).
+export function getSolicitudesB2B() {
+  return getSolicitudes().filter((s) => s.prioridad === 'Alta');
+}
+
+// Descuenta del CUPO DE CRÉDITO que la entidad tiene con GES cuando una
+// compra B2B se paga "con cupo" — mismo `credito.utilizado` que ya se
+// muestra en Entidades/CooperativaDetail y en el panorama de Súper admin
+// (su disponible se calcula con `creditoDisponible()`, nunca un saldo
+// aparte). Nunca toca la bolsa (son dos conceptos independientes).
+export function registrarConsumoCupo(cooperativaId, valor) {
+  const c = cooperativas.find((x) => x.id === Number(cooperativaId));
+  if (!c) return;
+  c.credito.utilizado += valor;
+}
+
+// Descuenta de la BOLSA de la cooperativa cuando una compra (carrito de
+// productos) se paga "con bolsa" — nunca toca el crédito (son dos
+// conceptos independientes). `bolsa.valor` NUNCA cambia aquí, solo
+// `bolsa.consumido`; el disponible se recalcula con `bolsaDisponible()`.
+export function registrarConsumoBolsa(cooperativaId, valor) {
+  const c = cooperativas.find((x) => x.id === Number(cooperativaId));
+  if (!c) return;
+  c.bolsa.consumido += valor;
 }
 
 export function getActividadPorCooperativa(cooperativaId) {
@@ -404,7 +546,7 @@ export function asignarInventario({ cooperativaId, productoId, cantidad }) {
 // visualmente si el Storage de GES ya tiene inventario suficiente para esa
 // cantidad ("Completada": se asigna de inmediato) o no ("Pendiente") — no
 // hay lógica de aprobación/backend real todavía (ver sección 10).
-export function crearSolicitudDesdeCooperativa({ cooperativaId, productoId, cantidad, administrador, formaPago }) {
+export function crearSolicitudDesdeCooperativa({ cooperativaId, productoId, cantidad, administrador, formaPago, prioridad }) {
   const n = Number(cantidad);
   if (!n || n <= 0) throw new Error('La cantidad debe ser mayor a 0.');
   if (!productoId) throw new Error('Selecciona un producto.');
@@ -424,6 +566,7 @@ export function crearSolicitudDesdeCooperativa({ cooperativaId, productoId, cant
     fecha: hoyISO(),
     administrador: administrador || 'Administrador',
     formaPago: formaPago || 'Cupo',
+    prioridad: prioridad || 'Normal',
   };
   solicitudes.push(solicitud);
   return solicitud;

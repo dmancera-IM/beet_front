@@ -115,10 +115,10 @@ export default function CuposList() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Cupos de crédito</h1>
-          <p className="page-subtitle">Monto y consumo del cupo que la cooperativa asigna a cada afiliado, desde PostgreSQL.</p>
+          <p className="page-subtitle">Monto y consumo del cupo que la entidad asigna a cada afiliado, desde PostgreSQL.</p>
           {isSuperAdmin && (
             <p className="text-caption" style={{ marginTop: 4 }}>
-              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Selecciona una cooperativa arriba para empezar.'}
+              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Selecciona una entidad arriba para empezar.'}
             </p>
           )}
         </div>
@@ -246,7 +246,7 @@ export default function CuposList() {
         onClose={() => setSuspendTarget(null)}
         tone={suspendTarget?.cupo?.estado ? 'danger' : 'info'}
         title={suspendTarget ? `¿${suspendTarget.cupo.estado ? 'Suspender' : 'Reactivar'} el cupo de ${suspendTarget.nombres} ${suspendTarget.apellidos}?` : ''}
-        description="El afiliado no podrá pagar con cupo de la cooperativa mientras esté suspendido. Las compras ya realizadas y sus cuotas no se modifican."
+        description="El afiliado no podrá pagar con cupo de la entidad mientras esté suspendido. Las compras ya realizadas y sus cuotas no se modifican."
         confirmLabel={suspendTarget?.cupo?.estado ? 'Suspender cupo' : 'Reactivar cupo'}
         onConfirm={toggleSuspendido}
       />
@@ -255,7 +255,7 @@ export default function CuposList() {
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         title={deleteTarget ? `¿Eliminar el cupo de ${deleteTarget.nombres} ${deleteTarget.apellidos}?` : ''}
-        description="El afiliado no podrá pagar con cupo de la cooperativa. Las compras ya realizadas y sus cuotas no se modifican."
+        description="El afiliado no podrá pagar con cupo de la entidad. Las compras ya realizadas y sus cuotas no se modifican."
         confirmLabel="Eliminar cupo"
         onConfirm={eliminarCupo}
       />

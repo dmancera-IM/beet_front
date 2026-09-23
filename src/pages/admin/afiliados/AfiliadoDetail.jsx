@@ -137,7 +137,7 @@ export default function AfiliadoDetail() {
           />
         ) : (
           <Card>
-            <EmptyState title="Sin cupo de crédito asignado" description="Asigna un cupo para que el afiliado pueda comprar con crédito de la cooperativa." />
+            <EmptyState title="Sin cupo de crédito asignado" description="Asigna un cupo para que el afiliado pueda comprar con crédito de la entidad." />
           </Card>
         )}
         <Card>

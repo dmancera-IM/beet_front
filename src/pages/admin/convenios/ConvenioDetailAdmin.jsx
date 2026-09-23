@@ -7,7 +7,9 @@ import { StatusBadge } from '../../../components/ui/Badge';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
 import PermissionGate from '../../../components/ui/PermissionGate';
 import Button from '../../../components/ui/Button';
+import Alert from '../../../components/ui/Alert';
 import * as convenioService from '../../../services/convenioService';
+import ProductoConfigModal from './ProductoConfigModal';
 import { useToast } from '../../../context/ToastContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
@@ -27,6 +29,7 @@ export default function ConvenioDetailAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [savingEstado, setSavingEstado] = useState(false);
+  const [productoModal, setProductoModal] = useState(null);
 
   useSetBreadcrumbs([
     { label: 'Convenios', to: `${base}/convenios` },
@@ -51,6 +54,10 @@ export default function ConvenioDetailAdmin() {
 
   const toggleEstado = async () => {
     const nuevoEstado = !convenio.estado;
+    if (nuevoEstado && !convenio.puede_activarse) {
+      push({ title: 'Configura el porcentaje de ganancia primero', description: 'Configura al menos un producto antes de activar este convenio.', variant: 'error' });
+      return;
+    }
     setSavingEstado(true);
     try {
       const actualizado = await convenioService.actualizarConvenio(convenio.id, { estado: nuevoEstado });
@@ -76,14 +83,38 @@ export default function ConvenioDetailAdmin() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">{convenio.nombre}</h1>
-          <p className="page-subtitle">Productos de este convenio y el inventario que tu cooperativa tiene disponible para cada uno.</p>
+          <p className="page-subtitle">Productos de este convenio y el inventario que tu entidad tiene disponible para cada uno.</p>
         </div>
         <div className="page-header-actions">
           <PermissionGate fallback={<StatusBadge status={convenio.estado} />}>
-            <Switch label={convenio.estado ? 'Activo' : 'Inactivo'} checked={convenio.estado} onChange={toggleEstado} disabled={savingEstado} />
+            <Switch
+              label={convenio.estado ? 'Activo' : 'Inactivo'}
+              checked={convenio.estado}
+              onChange={toggleEstado}
+              disabled={savingEstado || (!convenio.estado && !convenio.puede_activarse)}
+              title={!convenio.estado && !convenio.puede_activarse ? 'Configura el porcentaje de ganancia de un producto antes de activar' : undefined}
+            />
           </PermissionGate>
         </div>
       </div>
+
+      {!convenio.estado && !convenio.puede_activarse && (
+        <Alert tone="warning" title="Este convenio llegó desactivado">
+          Todavía falta configurar el porcentaje de ganancia de al menos un producto para poder venderlo a tus afiliados. Elige "Configurar" en la tabla de productos.
+        </Alert>
+      )}
+
+      <Card padding="card-pad-lg" className="section-gap">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div className="text-label" style={{ color: 'var(--text-primary)' }}>Ganancia de la entidad</div>
+          <span className="tabular" style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)' }}>
+            {convenio.porcentaje_ganancia_entidad != null ? `${convenio.porcentaje_ganancia_entidad}%` : 'Sin configurar'}
+          </span>
+        </div>
+        <p className="text-caption" style={{ margin: 0, color: 'var(--text-primary)' }}>
+          Se configura una sola vez para todo el convenio, desde la lista de Convenios — todos sus productos la heredan automáticamente.
+        </p>
+      </Card>
 
       <Card padding="card-pad-lg" className="section-gap">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
@@ -94,7 +125,7 @@ export default function ConvenioDetailAdmin() {
             legible en esta card — se fuerza --text-primary (oscuro) solo
             aquí, sin tocar esas clases compartidas por el resto de la app. */}
         <p className="text-caption" style={{ margin: 0, color: 'var(--text-primary)' }}>
-          Suma del inventario disponible de todos los productos de este convenio. Llega automáticamente cuando tu cooperativa adquiere inventario desde GES.
+          Suma del inventario disponible de todos los productos de este convenio. Llega automáticamente cuando tu entidad adquiere inventario desde GES.
         </p>
       </Card>
 
@@ -116,7 +147,7 @@ export default function ConvenioDetailAdmin() {
               </thead>
               <tbody>
                 {productos.map((p) => (
-                  <tr key={p.id_producto} style={{ cursor: 'pointer' }} onClick={() => navigate(`${base}/convenios/${convenio.id}/productos/${p.id_producto}`)}>
+                  <tr key={p.id_producto} style={{ cursor: 'pointer' }} onClick={() => setProductoModal(p.id_producto)}>
                     <td>
                       <div className="cell-primary">{p.nombre}</div>
                       <div className="cell-muted">{p.descripcion_base ?? '—'}</div>
@@ -127,7 +158,7 @@ export default function ConvenioDetailAdmin() {
                       {p.configurado ? <StatusBadge status={p.estado} /> : <span className="text-small cell-muted">Sin configurar</span>}
                     </td>
                     <td className="right">
-                      <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); navigate(`${base}/convenios/${convenio.id}/productos/${p.id_producto}`); }}>
+                      <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setProductoModal(p.id_producto); }}>
                         {p.configurado ? 'Editar' : 'Configurar'}
                       </Button>
                     </td>
@@ -138,6 +169,15 @@ export default function ConvenioDetailAdmin() {
           </div>
         )}
       </Card>
+
+      <ProductoConfigModal
+        open={!!productoModal}
+        productoId={productoModal}
+        convenioId={convenio.id}
+        convenioNombre={convenio.nombre}
+        onClose={() => setProductoModal(null)}
+        onSaved={() => { setProductoModal(null); cargar(); }}
+      />
     </div>
   );
 }

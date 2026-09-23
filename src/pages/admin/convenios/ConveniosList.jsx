@@ -218,7 +218,7 @@ export default function ConveniosList() {
           <p className="page-subtitle">Precios, ahorro, vigencia, inventario y estado de cada convenio, desde PostgreSQL.</p>
           {isSuperAdmin && (
             <p className="text-caption" style={{ marginTop: 4 }}>
-              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Selecciona una cooperativa arriba para empezar.'}
+              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Selecciona una entidad arriba para empezar.'}
             </p>
           )}
         </div>
@@ -258,7 +258,7 @@ export default function ConveniosList() {
           <ErrorState description={error} onRetry={cargar} />
         ) : pageRows.length === 0 ? (
           total === 0 ? (
-            <EmptyState title="No hay convenios registrados" description="Crea el primer convenio para esta cooperativa." />
+            <EmptyState title="No hay convenios registrados" description="Crea el primer convenio para esta entidad." />
           ) : (
             <EmptyState title="Sin convenios que coincidan" description="Ajusta los filtros o el término de búsqueda." />
           )
@@ -420,7 +420,7 @@ export default function ConveniosList() {
           </>
         }
       >
-        <Field label="Convenio" hint="Configura precio BEET, precio normal y vigencia para los trabajadores de tu cooperativa.">
+        <Field label="Convenio" hint="Configura precio BEET, precio normal y vigencia para los trabajadores de tu entidad.">
           <Select value={convenioAModificar} onChange={(e) => setConvenioAModificar(e.target.value)}>
             {convenios.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}</option>

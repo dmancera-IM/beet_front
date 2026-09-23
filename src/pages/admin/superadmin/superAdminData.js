@@ -6,11 +6,17 @@
 // No hace ningún fetch ni crea endpoints nuevos: es una lectura síncrona,
 // igual que pages/admin/ges/gesData.js.
 import { cooperativas, afiliados, cooperativasConvenios, productosConvenio, unidadesInventario, transacciones } from '../../../services/mockDb';
-import { getCooperativas as getCooperativasGes } from '../ges/gesData';
+import { creditoDisponible, getCooperativas as getCooperativasGes } from '../ges/gesData';
 
+// Súper admin sigue viendo el CUPO DE CRÉDITO de cada cooperativa (mismos
+// nombres de campo que ya usaba esta pantalla, `cupoDisponible`/
+// `cupoGastado`) — ahora calculados desde `credito.cupoAutorizado`/
+// `credito.utilizado` con `creditoDisponible()`, que conviven de forma
+// independiente con `bolsa` (ver gesData.js). No se muestra la bolsa aquí
+// para no rediseñar esta pantalla, fuera de alcance de esta ronda.
 function cupoDeCooperativa(cooperativaId) {
   const c = getCooperativasGes().find((g) => g.id === cooperativaId);
-  return { cupoDisponible: c?.cupoDisponible ?? 0, cupoGastado: c?.cupoGastado ?? 0 };
+  return { cupoDisponible: creditoDisponible(c?.credito), cupoGastado: c?.credito?.utilizado ?? 0 };
 }
 
 function afiliadosDe(cooperativaId) {
@@ -75,6 +81,49 @@ export function getConveniosMasUtilizados() {
       };
     })
     .sort((a, b) => b.cantidad - a.cantidad);
+}
+
+// Métricas de afiliados/compras para SUPER_ADMIN → Afiliados (secciones 10
+// y 11 de la ronda de ajustes). GLOBAL (todas las entidades) cuando no se
+// pasa `cooperativaId`; scoped a una sola entidad cuando sí se pasa — el
+// selector de entidad del header realmente filtra estos datos, no es solo
+// visual. Reutiliza los mismos arrays que el resto del panorama, nada
+// inventado fuera de afiliados/compras/convenios.
+export function getMetricasAfiliados(cooperativaId = null) {
+  const universoAfiliados = cooperativaId ? afiliadosDe(cooperativaId) : afiliados;
+  const idsAfiliados = new Set(universoAfiliados.map((a) => a.id));
+  const activos = universoAfiliados.filter((a) => a.estado).length;
+
+  const porEntidad = cooperativaId
+    ? []
+    : cooperativas.map((c) => ({ id: c.id, nombre: c.nombre, afiliados: afiliadosDe(c.id).length }));
+
+  const transaccionesUniverso = transacciones.filter((t) => idsAfiliados.has(t.afiliado_id) && t.estado === 'COMPLETADA');
+  const cantidadCompras = transaccionesUniverso.length;
+  const valorCompras = transaccionesUniverso.reduce((sum, t) => sum + t.total, 0);
+
+  const cantidadPorProducto = {};
+  transaccionesUniverso.forEach((t) => {
+    cantidadPorProducto[t.id_producto] = (cantidadPorProducto[t.id_producto] ?? 0) + t.cantidad;
+  });
+  const productosMasComprados = Object.entries(cantidadPorProducto)
+    .map(([productoId, cantidad]) => {
+      const producto = productosConvenio.find((p) => p.id === Number(productoId)) ?? null;
+      const cc = producto ? cooperativasConvenios.find((c) => c.id_convenio === producto.id_convenio) : null;
+      return { id: Number(productoId), nombre: cc && producto ? `${cc.nombre} · ${producto.nombre}` : `Producto ${productoId}`, cantidad };
+    })
+    .sort((a, b) => b.cantidad - a.cantidad)
+    .slice(0, 5);
+
+  return {
+    totalAfiliados: universoAfiliados.length,
+    activos,
+    inactivos: universoAfiliados.length - activos,
+    porEntidad,
+    cantidadCompras,
+    valorCompras,
+    productosMasComprados,
+  };
 }
 
 export function getResumenCooperativas() {

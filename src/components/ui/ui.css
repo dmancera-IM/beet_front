@@ -210,10 +210,21 @@
 .alert-warning { background: var(--warning-soft); border: 1px solid var(--warning-soft-border); }
 .alert-error { background: var(--error-soft); border: 1px solid var(--error-soft-border); }
 
-.toast-stack { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 1000; width: min(360px, calc(100vw - 32px)); }
+/* Arriba a la derecha, debajo del header (64px) para no taparlo — antes
+   aparecían abajo a la derecha. Mismo comportamiento (aparecen, se
+   mantienen unos segundos, desaparecen solos) y mismo ancho responsive en
+   móvil, solo cambió la posición. */
+.toast-stack { position: fixed; top: 80px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 1000; width: min(360px, calc(100vw - 32px)); }
+@media (max-width: 480px) {
+  .toast-stack { right: 16px; left: 16px; width: auto; }
+}
 .toast {
-  display: flex; align-items: flex-start; gap: 12px; background: var(--dark-surface); border-radius: var(--radius-md);
+  /* Semitransparente a propósito (no --dark-surface sólido): sigue siendo
+     el mismo color oscuro, solo con un poco de transparencia — el texto
+     (#fff, opaco) mantiene su legibilidad completa. */
+  display: flex; align-items: flex-start; gap: 12px; background: rgba(31, 41, 55, 0.92); border-radius: var(--radius-md);
   padding: 14px 16px; box-shadow: var(--shadow-toast); animation: beetFadeIn 180ms ease;
+  backdrop-filter: blur(4px);
 }
 .toast-title { font-size: 13px; font-weight: 600; color: #fff; }
 .toast-body { font-size: 12px; color: var(--dark-text-secondary); margin-top: 2px; }
@@ -264,6 +275,13 @@
   max-width: 460px; width: 100%; padding: 22px; max-height: 90vh; overflow-y: auto;
 }
 .modal-panel.modal-lg { max-width: 640px; }
+/* Popup ancho para formularios de precios (sección 6 de "Ganancia por
+   convenio y precios por producto"): usa el ancho disponible en escritorio
+   sin forzar scroll horizontal — si el contenido crece verticalmente, el
+   scroll vertical ya lo resuelve `.modal-panel` (max-height/overflow-y
+   arriba). En pantallas angostas simplemente ocupa el ancho normal del
+   modal (mismo comportamiento responsive que el resto de modales). */
+.modal-panel.modal-xl { width: 80vw; max-width: 1100px; }
 .modal-icon {
   width: 40px; height: 40px; border-radius: var(--radius-lg); display: inline-flex; align-items: center;
   justify-content: center; margin-bottom: 14px;

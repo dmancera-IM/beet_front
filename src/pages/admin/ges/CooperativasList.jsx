@@ -12,13 +12,13 @@ import { useTableState } from '../../../hooks/useTableState';
 import { formatCOP } from '../../../utils/format';
 import { useToast } from '../../../context/ToastContext';
 import GesNav from './GesNav';
-import { crearCooperativaGes, crearUsuarioAdminGes, getCooperativas } from './gesData';
+import { creditoDisponible, crearCooperativaGes, crearUsuarioAdminGes, getCooperativas } from './gesData';
 
-const emptyCoopDraft = { nombre: '', cupo: '' };
+const emptyCoopDraft = { nombre: '', bolsa: '', cupoCredito: '' };
 const emptyUserDraft = { nombre: '', correo: '', password: '', cooperativaId: '' };
 
 export default function CooperativasList() {
-  useSetBreadcrumbs([{ label: 'GES', to: '/ges' }, { label: 'Cooperativas' }]);
+  useSetBreadcrumbs([{ label: 'GES', to: '/ges' }, { label: 'Entidades' }]);
   const { push } = useToast();
 
   const [, setVersion] = useState(0);
@@ -55,12 +55,23 @@ export default function CooperativasList() {
 
     setCoopSaving(true);
     try {
-      const nueva = crearCooperativaGes({ nombre: coopDraft.nombre, cupo: coopDraft.cupo });
-      push({ title: 'Cooperativa creada', description: nueva.nombre });
+      // Bolsa y cupo de crédito son dos campos independientes — GES ya no
+      // define un único "cupo contratado" (ver definición funcional de
+      // Bolsa/Crédito). Ambos son opcionales: una entidad puede crearse
+      // sin ninguno de los dos configurado todavía.
+      const nueva = crearCooperativaGes({
+        nombre: coopDraft.nombre,
+        bolsa: coopDraft.bolsa,
+        cupoCredito: coopDraft.cupoCredito,
+      });
+      push({
+        title: 'Entidad creada',
+        description: `${nueva.nombre}: bolsa ${formatCOP(nueva.bolsa.valor)}, cupo de crédito autorizado ${formatCOP(nueva.credito.cupoAutorizado)}.`,
+      });
       cerrarFormCoop();
       setVersion((v) => v + 1);
     } catch (err) {
-      push({ title: 'No se pudo crear la cooperativa', description: err.message, variant: 'error' });
+      push({ title: 'No se pudo crear la entidad', description: err.message, variant: 'error' });
     } finally {
       setCoopSaving(false);
     }
@@ -78,7 +89,7 @@ export default function CooperativasList() {
     if (!userDraft.nombre.trim()) nextErrors.nombre = 'El nombre es obligatorio.';
     if (!userDraft.correo.trim()) nextErrors.correo = 'El correo es obligatorio.';
     if (userDraft.password.length < 8) nextErrors.password = 'Mínimo 8 caracteres.';
-    if (!userDraft.cooperativaId) nextErrors.cooperativaId = 'Selecciona la cooperativa de este usuario.';
+    if (!userDraft.cooperativaId) nextErrors.cooperativaId = 'Selecciona la entidad de este usuario.';
     setUserErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
@@ -102,12 +113,12 @@ export default function CooperativasList() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="text-h1 page-title">Cooperativas</h1>
-          <p className="page-subtitle">Cooperativas administradas por GES, con su cupo y convenios asociados.</p>
+          <h1 className="text-h1 page-title">Entidades</h1>
+          <p className="page-subtitle">Entidades administradas por GES, con su cupo y convenios asociados.</p>
         </div>
         <div className="page-header-actions">
           <Button variant="secondary" icon={<IconPlus color="#1F2937" />} onClick={() => setUserFormOpen(true)}>Crear usuario</Button>
-          <Button icon={<IconPlus color="#fff" />} onClick={() => setCoopFormOpen(true)}>Crear cooperativa</Button>
+          <Button icon={<IconPlus color="#fff" />} onClick={() => setCoopFormOpen(true)}>Crear entidad</Button>
         </div>
       </div>
 
@@ -118,7 +129,7 @@ export default function CooperativasList() {
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 280 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar cooperativa..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Buscar entidad..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
             <Select style={{ width: 160 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
               <option value="">Todo estado</option>
@@ -130,19 +141,22 @@ export default function CooperativasList() {
 
         {pageRows.length === 0 ? (
           total === 0 ? (
-            <EmptyState title="No hay cooperativas registradas" description="Crea la primera cooperativa desde el botón “Crear cooperativa”." />
+            <EmptyState title="No hay entidades registradas" description="Crea la primera entidad desde el botón “Crear entidad”." />
           ) : (
-            <EmptyState title="Sin cooperativas que coincidan" description="Ajusta los filtros o el término de búsqueda." />
+            <EmptyState title="Sin entidades que coincidan" description="Ajusta los filtros o el término de búsqueda." />
           )
         ) : (
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Cooperativa</th>
+                  <th>Entidad</th>
                   <th>Estado</th>
-                  <th className="right">Cupo disponible</th>
-                  <th className="right">Cupo gastado</th>
+                  <th className="right">Bolsa comprada</th>
+                  <th className="right">Bolsa utilizada</th>
+                  <th className="right">Crédito autorizado</th>
+                  <th className="right">Crédito utilizado</th>
+                  <th className="right">Crédito disponible</th>
                   <th className="right">Convenios</th>
                   <th></th>
                 </tr>
@@ -152,8 +166,11 @@ export default function CooperativasList() {
                   <tr key={c.id}>
                     <td className="cell-primary">{c.nombre}</td>
                     <td><StatusBadge status={c.estado} /></td>
-                    <td className="right tabular">{formatCOP(c.cupoDisponible)}</td>
-                    <td className="right tabular">{formatCOP(c.cupoGastado)}</td>
+                    <td className="right tabular">{formatCOP(c.bolsa.valor)}</td>
+                    <td className="right tabular">{formatCOP(c.bolsa.consumido)}</td>
+                    <td className="right tabular">{formatCOP(c.credito.cupoAutorizado)}</td>
+                    <td className="right tabular">{formatCOP(c.credito.utilizado)}</td>
+                    <td className="right tabular">{formatCOP(creditoDisponible(c.credito))}</td>
                     <td className="right tabular">{c.conveniosActivos}</td>
                     <td className="right"><Link to={`/ges/cooperativas/${c.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver</Link></td>
                   </tr>
@@ -164,26 +181,29 @@ export default function CooperativasList() {
         )}
 
         {pageRows.length > 0 && (
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${total} cooperativas`} />
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${total} entidades`} />
         )}
       </div>
 
       <Modal
         open={coopFormOpen}
         onClose={cerrarFormCoop}
-        title="Crear cooperativa"
+        title="Crear entidad"
         actions={
           <>
             <Button variant="secondary" onClick={cerrarFormCoop} disabled={coopSaving}>Cancelar</Button>
-            <Button onClick={crearCooperativa} loading={coopSaving}>Crear cooperativa</Button>
+            <Button onClick={crearCooperativa} loading={coopSaving}>Crear entidad</Button>
           </>
         }
       >
-        <Field label="Nombre de cooperativa" error={coopErrors.nombre}>
-          <Input value={coopDraft.nombre} onChange={(e) => setCoopDraft((d) => ({ ...d, nombre: e.target.value }))} placeholder="Cooperativa ABC" />
+        <Field label="Nombre de la entidad" error={coopErrors.nombre}>
+          <Input value={coopDraft.nombre} onChange={(e) => setCoopDraft((d) => ({ ...d, nombre: e.target.value }))} placeholder="Entidad ABC" />
         </Field>
-        <Field label="Cupo contratado" optional hint="La cooperativa decide cuánto cupo comprar. Puede crearse sin cupo todavía.">
-          <Input type="number" min="0" value={coopDraft.cupo} onChange={(e) => setCoopDraft((d) => ({ ...d, cupo: e.target.value }))} placeholder="20000000" />
+        <Field label="Valor de la bolsa" optional hint="Monto de bolsa comprado como referencia — la entidad podrá comprar un monto distinto desde su panel.">
+          <Input type="number" min="0" step="10000" value={coopDraft.bolsa} onChange={(e) => setCoopDraft((d) => ({ ...d, bolsa: e.target.value }))} placeholder="5000000" />
+        </Field>
+        <Field label="Cupo de crédito autorizado" optional hint="Límite máximo de crédito que GES autoriza a la entidad. Puede dejarse en $0 y aumentarse después.">
+          <Input type="number" min="0" step="10000" value={coopDraft.cupoCredito} onChange={(e) => setCoopDraft((d) => ({ ...d, cupoCredito: e.target.value }))} placeholder="10000000" />
         </Field>
       </Modal>
 
@@ -207,15 +227,15 @@ export default function CooperativasList() {
         <Field label="Contraseña temporal" error={userErrors.password} hint="Mínimo 8 caracteres. Compártela por un canal seguro.">
           <Input type="password" value={userDraft.password} onChange={(e) => setUserDraft((d) => ({ ...d, password: e.target.value }))} />
         </Field>
-        <Field label="Cooperativa" error={userErrors.cooperativaId} hint="El usuario quedará como Administrador de esta cooperativa.">
+        <Field label="Entidad" error={userErrors.cooperativaId} hint="El usuario quedará como Administrador de esta entidad.">
           <Select value={userDraft.cooperativaId} onChange={(e) => setUserDraft((d) => ({ ...d, cooperativaId: e.target.value }))}>
-            <option value="">Selecciona una cooperativa…</option>
+            <option value="">Selecciona una entidad…</option>
             {cooperativas.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </Select>
         </Field>
-        <p className="text-caption cell-muted">Rol: Administrador de cooperativa.</p>
+        <p className="text-caption cell-muted">Rol: Administrador de entidad.</p>
       </Modal>
     </div>
   );

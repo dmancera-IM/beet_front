@@ -73,7 +73,7 @@ export default function PortalRegister() {
         </button>
         <img src={logo} alt="BEET Ticket" height={52} style={{ marginBottom: 28 }} />
         <h1 className="text-h2" style={{ margin: '0 0 6px' }}>Activa tu cuenta</h1>
-        <p className="text-small" style={{ margin: '0 0 26px' }}>Tu cooperativa ya te registró con tu número de documento y correo — solo falta que definas tu contraseña.</p>
+        <p className="text-small" style={{ margin: '0 0 26px' }}>Tu entidad ya te registró con tu número de documento y correo — solo falta que definas tu contraseña.</p>
 
         {error && (
           <div style={{ marginBottom: 18 }}>

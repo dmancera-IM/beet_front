@@ -65,7 +65,10 @@ export default function TicketDetail() {
             <Row label="Producto" value={convenio?.nombre} />
             <Row label="Descripción" value={convenio?.descripcion} />
           </div>
-          <Button variant="secondary" onClick={descargar}>Descargar</Button>
+          <Button variant="secondary" onClick={descargar}>Generar PDF</Button>
+          <p className="text-caption cell-muted" style={{ marginTop: 10 }}>
+            El PDF incluye el código QR y de barras para presentar o redimir tu beneficio.
+          </p>
         </Card>
       </div>
     </div>

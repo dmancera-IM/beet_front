@@ -135,7 +135,7 @@ export default function AfiliadoDetailAdmin() {
           />
         ) : (
           <Card>
-            <EmptyState title="Sin cupo de crédito asignado" description="Asigna un cupo para que el afiliado pueda comprar con crédito de la cooperativa." />
+            <EmptyState title="Sin cupo de crédito asignado" description="Asigna un cupo para que el afiliado pueda comprar con crédito de la entidad." />
           </Card>
         )}
         <Card>
@@ -187,7 +187,7 @@ export default function AfiliadoDetailAdmin() {
         open={deleteOpen}
         onClose={() => !deleting && setDeleteOpen(false)}
         title={`¿Eliminar a ${nombreCompleto}?`}
-        description="Esta acción elimina permanentemente al afiliado de tu cooperativa. Puedes cancelar sin eliminar nada."
+        description="Esta acción elimina permanentemente al afiliado de tu entidad. Puedes cancelar sin eliminar nada."
         confirmLabel="Confirmar eliminación"
         loading={deleting}
         onConfirm={eliminarAfiliado}

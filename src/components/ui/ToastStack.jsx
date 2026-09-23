@@ -1,4 +1,4 @@
-import { IconCheckCircle, IconInfoCircle } from './Icons';
+import { IconCheckCircle, IconInfoCircle, IconWarningTriangle } from './Icons';
 
 export default function ToastStack({ toasts, onDismiss }) {
   if (!toasts.length) return null;
@@ -8,6 +8,8 @@ export default function ToastStack({ toasts, onDismiss }) {
         <div className="toast" key={t.id}>
           {t.variant === 'error' ? (
             <IconInfoCircle size={18} color="var(--dark-error-icon)" />
+          ) : t.variant === 'warning' ? (
+            <IconWarningTriangle size={18} color="var(--warning)" />
           ) : (
             <IconCheckCircle size={18} color="var(--accent-green)" />
           )}

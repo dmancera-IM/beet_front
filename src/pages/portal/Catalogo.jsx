@@ -63,7 +63,7 @@ export default function Catalogo() {
       {status === 'success' && (
         filtrados.length === 0 ? (
           convenios.length === 0 ? (
-            <EmptyState title="No hay convenios disponibles actualmente" description="Tu cooperativa todavía no ha habilitado convenios activos." />
+            <EmptyState title="No hay convenios disponibles actualmente" description="Tu entidad todavía no ha habilitado convenios activos." />
           ) : (
             <EmptyState title="No encontramos beneficios con esos filtros" description="Ajusta la búsqueda para ver más resultados." />
           )

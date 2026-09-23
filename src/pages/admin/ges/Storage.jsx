@@ -91,7 +91,7 @@ export default function Storage() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Storage</h1>
-          <p className="page-subtitle">Qué tiene GES disponible, cuánto ha asignado a cooperativas y cuánto le queda por convenio.</p>
+          <p className="page-subtitle">Qué tiene GES disponible, cuánto ha asignado a entidades y cuánto le queda por convenio.</p>
         </div>
         <div className="page-header-actions">
           <Button icon={<IconPlus color="#fff" />} onClick={abrirForm}>Agregar storage</Button>
@@ -102,7 +102,7 @@ export default function Storage() {
 
       <div className="grid grid-kpi section-gap">
         <KpiCard label="Disponible" value={totalDisponible.toLocaleString('es-CO')} deltaTone="neutral" delta="Listo para asignar" />
-        <KpiCard label="Compradas" value={totalAsignado.toLocaleString('es-CO')} deltaTone="neutral" delta="Entregado a cooperativas" />
+        <KpiCard label="Compradas" value={totalAsignado.toLocaleString('es-CO')} deltaTone="neutral" delta="Entregado a entidades" />
         <KpiCard label="Total" value={(totalDisponible + totalAsignado).toLocaleString('es-CO')} deltaTone="neutral" delta="En Storage" />
       </div>
 
@@ -174,9 +174,9 @@ export default function Storage() {
                 <div className="tabular" style={{ fontSize: 18, fontWeight: 600 }}>{detalle.total.toLocaleString('es-CO')}</div>
               </div>
             </div>
-            <div className="text-label" style={{ marginBottom: 10 }}>Asignado por cooperativa</div>
+            <div className="text-label" style={{ marginBottom: 10 }}>Comprado por entidad</div>
             {getAsignacionesPorProveedor(detalle.proveedorId).length === 0 ? (
-              <div className="text-small cell-muted">Todavía no se ha asignado inventario de este convenio.</div>
+              <div className="text-small cell-muted">Todavía no hay ventas de este producto a ninguna entidad.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {getAsignacionesPorProveedor(detalle.proveedorId).map((a) => (
