@@ -23,7 +23,8 @@ Convenciones: `snake_case`, claves primarias `id BIGSERIAL`, timestamps en
 6. Compras GES ↔ Cooperativa solicitudes_compra
 7. Compras del afiliado      transacciones, tickets, cupos_credito_afiliado,
                              documentos_asuncion_deuda
-8. Auditoría                 logs_auditoria
+8. Pasarela de pago          pagos_payments_way (Payments Way — solo AFILIADO)
+9. Auditoría                 logs_auditoria
 ```
 
 Regla general que atraviesa todo el diseño: **Bolsa y Crédito son
@@ -338,21 +339,26 @@ CREATE TABLE cupos_credito_afiliado (
 );
 
 CREATE TABLE transacciones (
-  id              BIGSERIAL PRIMARY KEY,
-  id_afiliado     BIGINT NOT NULL REFERENCES afiliados(id),
-  id_producto     BIGINT NOT NULL REFERENCES productos(id),
-  cantidad        INTEGER NOT NULL CHECK (cantidad > 0),
-  subtotal        BIGINT NOT NULL,
-  total           BIGINT NOT NULL,
-  metodo_pago     TEXT NOT NULL CHECK (metodo_pago IN ('TARJETA', 'CUPO')),
-  numero_cuotas   SMALLINT,             -- solo aplica a CUPO
-  estado          TEXT NOT NULL DEFAULT 'COMPLETADA' CHECK (estado = 'COMPLETADA'),
-  referencia_pago TEXT,                 -- id de autorización de la pasarela (solo TARJETA)
-  resultado_pago  TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  BIGSERIAL PRIMARY KEY,
+  id_afiliado         BIGINT NOT NULL REFERENCES afiliados(id),
+  id_producto         BIGINT NOT NULL REFERENCES productos(id),
+  cantidad            INTEGER NOT NULL CHECK (cantidad > 0),
+  subtotal            BIGINT NOT NULL,
+  total               BIGINT NOT NULL,
+  metodo_pago         TEXT NOT NULL CHECK (metodo_pago IN ('TARJETA', 'PSE', 'CUPO')),
+  numero_cuotas       SMALLINT,             -- solo aplica a CUPO
+  -- 'PENDIENTE' solo existe mientras se espera la confirmación de Payments
+  -- Way (TARJETA/PSE); una compra con CUPO nace directamente 'COMPLETADA'
+  -- (no depende de un tercero, ver sección 8).
+  estado              TEXT NOT NULL DEFAULT 'COMPLETADA' CHECK (estado IN ('PENDIENTE', 'COMPLETADA')),
+  referencia_externa  TEXT UNIQUE,          -- external_order que se le manda a Payments Way (solo TARJETA/PSE)
+  referencia_pago     TEXT,                 -- authorization id que devuelve Payments Way al aprobar
+  resultado_pago      TEXT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- Un pago rechazado por la pasarela nunca genera fila aquí — el afiliado
--- solo ve el error; no existe un estado "RECHAZADA".
+-- Un pago rechazado por la pasarela nunca genera fila COMPLETADA aquí —
+-- el afiliado solo ve el error; no existe un estado "RECHAZADA" (ver
+-- sección 8 para el detalle bruto de cada intento, aprobado o no).
 
 CREATE TABLE tickets (
   id              BIGSERIAL PRIMARY KEY,
@@ -377,15 +383,95 @@ CREATE TABLE documentos_asuncion_deuda (
 ```
 
 **Nota importante de alcance:** esta sección (compra del afiliado dentro
-de su cooperativa, pago con tarjeta o con el cupo del afiliado) es un
+de su cooperativa, pago con tarjeta, PSE o con el cupo del afiliado) es un
 circuito **distinto** del de Bolsa/Crédito de la cooperativa (sección 4 y
 6) — el afiliado nunca toca la bolsa ni el crédito de su cooperativa
 directamente; consume su propio `cupo_credito_afiliado` o paga con
-tarjeta. No mezclar ambos flujos.
+Payments Way (tarjeta/PSE). No mezclar ambos flujos.
 
 ---
 
-## 8. Auditoría
+## 8. Pasarela de pago del afiliado — Payments Way
+
+**Alcance:** Payments Way (Merchant/Vepay) es la pasarela que procesa
+`TARJETA` y `PSE` **únicamente** en la compra del afiliado (dominio 7).
+GES nunca la usa para comprarle a un proveedor (Cine Colombia, Mundo
+Aventura, etc.) — eso queda fuera de BEET — y la cooperativa nunca la usa
+para su Bolsa/Crédito con GES (dominio 4 y 6): esos siguen siendo saldos
+internos, sin pasarela real.
+
+```
+AFILIADO
+   │ elige bono/boleta y forma de pago (Tarjeta o PSE)
+   ▼
+BACKEND BEET
+   │ crea transacciones (estado 'PENDIENTE', referencia_externa = UUID propio)
+   │ crea pagos_payments_way (estado 'CREADA')
+   │ llama a Payments Way (checkout hospedado/widget — nunca la API
+   │ directa con datos de tarjeta crudos, para no entrar en alcance PCI-DSS)
+   ▼
+PAYMENTS WAY
+   │ el afiliado paga en su portal (tarjeta) o en su banco (PSE)
+   ▼
+WEBHOOK → BACKEND BEET
+   │ actualiza pagos_payments_way con el payload crudo recibido
+   │ si status = aprobado → transacciones.estado = 'COMPLETADA',
+   │   se generan los tickets (dominio 7) y se descuenta storage/inventario
+   │ si status = rechazado/fallido → transacciones NO pasa a 'COMPLETADA'
+   │   (el afiliado ve el error; no se genera ticket)
+```
+
+```sql
+-- Un intento de pago por transacción (una transacción puede tener más de
+-- un intento si el primero fue rechazado y el afiliado reintenta).
+CREATE TABLE pagos_payments_way (
+  id                      BIGSERIAL PRIMARY KEY,
+  id_transaccion          BIGINT NOT NULL REFERENCES transacciones(id),
+  metodo                  TEXT NOT NULL CHECK (metodo IN ('TARJETA', 'PSE')),
+  external_order          TEXT NOT NULL UNIQUE,   -- mismo valor que transacciones.referencia_externa
+  payments_way_transaction_id TEXT,               -- id que asigna Payments Way (llega en la respuesta/webhook)
+  estado                  TEXT NOT NULL DEFAULT 'CREADA'
+                            CHECK (estado IN ('CREADA', 'PENDIENTE', 'APROBADA', 'RECHAZADA', 'FALLIDA')),
+  codigo_respuesta        TEXT,      -- ej. "00" aprobada, "51" fondos insuficientes, "54" tarjeta expirada
+  banco                   TEXT,      -- solo PSE (ej. "BANCO UNION COLOMBIANO" en sandbox)
+  monto                   BIGINT NOT NULL CHECK (monto > 0),
+  payload_webhook         JSONB,     -- payload crudo del último webhook recibido, para auditoría/soporte
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actualizado_en          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_pagos_payments_way_transaccion ON pagos_payments_way (id_transaccion);
+```
+
+**Reglas de implementación (para cuando exista el backend):**
+- Las credenciales (`Merchant ID`, `Terminal ID`, `Form ID`, `API Key`)
+  viven **solo** en variables de entorno del backend — nunca en el
+  frontend ni en el repositorio. El frontend jamás ve el API Key.
+- `external_order` se genera en BEET (no lo inventa Payments Way) y es la
+  llave para conciliar: `transacciones.referencia_externa` = `pagos_payments_way.external_order`.
+- El webhook debe ser **idempotente**: si Payments Way reintenta la misma
+  notificación, actualizar la misma fila de `pagos_payments_way` por
+  `external_order`, nunca duplicar el ticket ni volver a descontar
+  inventario.
+- Responder `200` al webhook cuando la transacción quedó aprobada
+  (status 34 en la nomenclatura de Payments Way) y `201` para cualquier
+  otro estado, tal como exige su documentación.
+- `GET /ClientAPI/ObtenerTransaccionByExternalOrder` (requiere
+  certificación PCI-DSS del lado de BEET) sirve como respaldo para
+  consultar el estado si el webhook nunca llega — no reemplaza al
+  webhook, es una reconciliación de contingencia.
+- Ambiente de pruebas (sandbox) ya entregado por Payments Way:
+  checkout en `merchantpruebas.vepay.com.co`, endpoints en
+  `serviceregisterpruebas.vepay.com.co`, documentación en
+  `developerpruebas.vepay.com.co`, con tarjetas y un banco PSE de prueba
+  ("BANCO UNION COLOMBIANO") que permite forzar los estados `ok / not
+  authorized / pending / failed` desde su panel de depuración. Las
+  credenciales concretas de ese sandbox no se incluyen en este documento
+  por seguridad — quedan en el gestor de secretos del proyecto.
+
+---
+
+## 9. Auditoría
 
 ```sql
 CREATE TABLE logs_auditoria (
@@ -401,7 +487,7 @@ CREATE TABLE logs_auditoria (
 
 ---
 
-## 9. Relaciones clave (resumen)
+## 10. Relaciones clave (resumen)
 
 ```
 cooperativas 1──* usuarios
@@ -422,6 +508,7 @@ afiliados 1──1 cupos_credito_afiliado
 afiliados 1──* transacciones ──* productos
 afiliados 1──* tickets
 afiliados 1──* documentos_asuncion_deuda
+transacciones 1──* pagos_payments_way   (solo metodo_pago IN ('TARJETA','PSE'))
 
 convenios 1──* productos
 convenios 1──1 plantillas_pdf
@@ -430,7 +517,7 @@ productos 1──* storage_ges
 
 ---
 
-## 10. Correspondencia con el mock actual del frontend
+## 11. Correspondencia con el mock actual del frontend
 
 | Tabla real                  | Origen en `beet_front` (mock)                                  |
 |------------------------------|------------------------------------------------------------------|
@@ -450,6 +537,7 @@ productos 1──* storage_ges
 | `tickets`                     | `mockDb.js` → `tickets`                                           |
 | `cupos_credito_afiliado`      | `mockDb.js` → `cupos`                                             |
 | `documentos_asuncion_deuda`   | `mockDb.js` → `documentos`                                        |
+| `pagos_payments_way`          | No existe en el mock — hoy `PurchaseFlow.jsx` simula el pago con `TARJETA`/`CUPO` sin pasarela real |
 | `logs_auditoria`              | `mockDb.js` → `logsAuditoria`                                     |
 
 `movimientos_bolsa` y `movimientos_credito` **no existen todavía en el
@@ -458,17 +546,21 @@ directamente por `registrarConsumoBolsa`/`registrarConsumoCupo`) — se
 proponen aquí como el ledger de auditoría que un backend real necesita
 para no perder el historial de cada movimiento.
 
+`transacciones.metodo_pago = 'PSE'` tampoco existe todavía en el mock
+(solo `TARJETA`/`CUPO`) — se agrega en este documento junto con
+`pagos_payments_way` para la integración real de Payments Way (sección 8).
+
 ---
 
-## 11. Lo que este diseño deliberadamente NO define todavía
+## 12. Lo que este diseño deliberadamente NO define todavía
 
 Siguiendo el alcance acordado, este esquema **no** incluye:
 - Tasas de interés, cuotas, moras ni intereses de mora sobre Crédito.
 - Reglas de scoring o aprobación financiera automática.
-- Conciliación contable ni integración con pasarela de pago real
-  (Payments Way).
-- Tablas para el flujo de pago del afiliado con Payments Way (quedará
-  documentado aparte cuando se defina esa integración).
+- Conciliación contable (cruce de comisiones/retenciones de Payments Way
+  contra lo liquidado).
+- Reintentos automáticos de pago ni lógica de "carrito abandonado" en el
+  checkout del afiliado.
 
 Estos puntos se añaden como una migración posterior, sin romper lo que
 ya queda definido aquí.
