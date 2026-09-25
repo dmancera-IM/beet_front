@@ -48,10 +48,10 @@ export default function CuposList() {
     setLoading(true);
     setError(null);
     afiliadosService
-      .listarAfiliados({ pageSize: 100 })
-      .then((data) =>
+      .listarAfiliados({ cooperativaId: selectedId || undefined })
+      .then((afiliados) =>
         Promise.all(
-          data.items.map((a) =>
+          afiliados.map((a) =>
             cuposService
               .obtenerCupo(a.id)
               .then((cupo) => ({ ...a, cupo }))
@@ -62,7 +62,7 @@ export default function CuposList() {
       .then(setFilas)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No pudimos cargar los cupos.'))
       .finally(() => setLoading(false));
-  }, [necesitaSeleccion]);
+  }, [necesitaSeleccion, selectedId]);
 
   useEffect(() => { cargar(); }, [cargar, selectedId]);
 

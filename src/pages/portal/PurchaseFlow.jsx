@@ -3,22 +3,27 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Stepper from '../../components/ui/Stepper';
 import { Card } from '../../components/ui/Card';
 import Button, { IconButton } from '../../components/ui/Button';
-import { Radio, Select, Field, Input } from '../../components/ui/Field';
+import { Radio, Select } from '../../components/ui/Field';
 import Alert from '../../components/ui/Alert';
 import { LoadingState, EmptyState, ErrorState } from '../../components/ui/States';
-import SignaturePad from '../../components/ui/SignaturePad';
 import * as convenioService from '../../services/convenioService';
 import * as transaccionesService from '../../services/transaccionesService';
 import { useMiCupo } from '../../hooks/useMiCupo';
-import { useToast } from '../../context/ToastContext';
-import { formatCOP, cuotasLabel, percent } from '../../utils/format';
+import { formatCOP, cuotasLabel } from '../../utils/format';
 
 const CUOTAS_OPCIONES = [1, 3, 6, 12];
 
+// ADAPTADO AL BACKEND REAL (POST /transacciones/comprar): solo acepta
+// {id_producto, cantidad, metodo_pago, numero_cuotas} — no hay
+// `numero_tarjeta` ni `firma_base64` (no hay pasarela de pago real ni
+// concepto de "documento de asunción de deuda" en las 13 tablas de este
+// alcance), así que se retiraron el paso de firma y el número de tarjeta:
+// para TARJETA/PSE, el backend crea la transacción COMPLETADA de inmediato
+// sin validar nada externo — ver limitación documentada en
+// beet_backend/app/services/transacciones_service.py.
 export default function PurchaseFlow() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { push } = useToast();
   const { cupo, loading: cupoLoading, refrescar: refrescarCupo } = useMiCupo();
 
   const [convenio, setConvenio] = useState(undefined);
@@ -26,17 +31,11 @@ export default function PurchaseFlow() {
 
   const [step, setStep] = useState('cantidad');
   const [cantidad, setCantidad] = useState(1);
-  const [metodoPago, setMetodoPago] = useState('tarjeta');
+  const [metodoPago, setMetodoPago] = useState('TARJETA');
   const [cuotas, setCuotas] = useState(3);
-  const [numeroTarjeta, setNumeroTarjeta] = useState('');
-  const [firmaBase64, setFirmaBase64] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [compraError, setCompraError] = useState('');
-  const [compraErrorTipo, setCompraErrorTipo] = useState(null); // 'rechazado_fondos' | 'rechazado_invalida' | 'error_pasarela' | null
 
-  // El catálogo del afiliado lista PRODUCTOS (un convenio puede tener
-  // varios, ej. Cine Colombia → Entrada 2D / Entrada 3D) — `id` aquí es el
-  // id del producto, y `convenio_nombre` es el convenio al que pertenece.
   useEffect(() => {
     convenioService
       .obtenerCatalogoAfiliado()
@@ -44,26 +43,25 @@ export default function PurchaseFlow() {
       .catch((err) => setLoadError(err.message));
   }, [id]);
 
-  const cupoDisponible = cupo ? cupo.cupo_disponible : 0;
-  // No affiliate-facing stock-count endpoint exists — the real inventory
-  // check happens server-side, atomically, at the moment of purchase (see
-  // backend/app/services/transaction_service.py). The real schema also has
-  // no per-convenio purchase-cap column (`convenios` has no `tope`), so
-  // this is a UI-only sane default, not a value read from the backend.
+  // PENDIENTE: el backend real no expone un endpoint para que el propio
+  // afiliado consulte SU cupo (solo GET /afiliados/{id}/cupo con audiencia
+  // admin) — `cupo` siempre llega null aquí. No se puede mostrar el saldo
+  // disponible antes de comprar; el backend sigue validando el saldo real
+  // al confirmar, y cualquier insuficiencia se muestra como el error real
+  // que devuelva (no un chequeo adivinado en el cliente).
+  const cupoDisponible = cupo ? cupo.cupo_disponible : null;
+  // No hay endpoint de stock para el afiliado — la validación real de
+  // inventario ocurre server-side, de forma atómica, al momento de comprar.
   const maxUnidades = convenio ? 10 : 0;
-  const total = convenio ? convenio.precio_beet * cantidad : 0;
-  const cupoInsuficiente = metodoPago === 'cupo' && !!cupo && total > cupoDisponible;
+  const total = convenio ? convenio.precio * cantidad : 0;
+  const cupoInsuficiente = metodoPago === 'CUPO' && cupoDisponible != null && total > cupoDisponible;
 
-  const steps = useMemo(() => {
-    const base = [
-      { key: 'cantidad', label: 'Cantidad' },
-      { key: 'pago', label: 'Pago' },
-      { key: 'resumen', label: 'Checkout' },
-    ];
-    if (metodoPago === 'cupo') base.push({ key: 'firma', label: 'Firma' });
-    base.push({ key: 'resultado', label: 'Ticket' });
-    return base;
-  }, [metodoPago]);
+  const steps = useMemo(() => [
+    { key: 'cantidad', label: 'Cantidad' },
+    { key: 'pago', label: 'Pago' },
+    { key: 'resumen', label: 'Checkout' },
+    { key: 'resultado', label: 'Ticket' },
+  ], []);
 
   if (loadError) return <ErrorState description={loadError} onRetry={() => window.location.reload()} />;
   if (convenio === undefined || cupoLoading) return <LoadingState title="Cargando…" />;
@@ -71,52 +69,23 @@ export default function PurchaseFlow() {
     return <EmptyState title="Beneficio no encontrado" actionLabel="Volver al catálogo" onAction={() => navigate('/portal/catalogo')} />;
   }
 
-  const ejecutarCompra = async (firma) => {
+  const confirmarCompra = async () => {
     setCompraError('');
-    setCompraErrorTipo(null);
+    setStep('confirmando');
     try {
       const trx = await transaccionesService.comprar({
         producto_id: convenio.id,
         cantidad,
         metodo_pago: metodoPago,
-        numero_cuotas: metodoPago === 'cupo' ? cuotas : undefined,
-        firma_base64: metodoPago === 'cupo' ? firma : undefined,
-        numero_tarjeta: metodoPago === 'tarjeta' ? numeroTarjeta : undefined,
+        numero_cuotas: metodoPago === 'CUPO' ? cuotas : undefined,
       });
       setResultado(trx);
       setStep('resultado');
-      if (metodoPago === 'cupo') {
-        push({ title: 'Firma registrada', description: `Autorizaste ${cuotasLabel(cuotas)} sobre tu cupo de crédito.` });
-        // The header's cupo chip (and "Mi cupo") hold their own copy of
-        // this value, fetched once when the portal session started —
-        // without this, they'd keep showing the pre-purchase balance
-        // until a full page reload (see AffiliateAuthContext.jsx).
-        refrescarCupo();
-      }
+      if (metodoPago === 'CUPO') refrescarCupo();
     } catch (err) {
-      // A declined/errored card payment (see apiClient.ejecutarCompra) never
-      // persists a transacción — there is no "RECHAZADA" state in the model
-      // (sección 11) — so it's always thrown as an ApiError. `err.detail`
-      // carries the 3 non-approved outcomes so the message (and whether
-      // "reintentar" makes sense) matches what actually happened.
       setCompraError(err.message || 'No fue posible completar la compra.');
-      setCompraErrorTipo(['rechazado_fondos', 'rechazado_invalida', 'error_pasarela'].includes(err.detail) ? err.detail : null);
-      setStep(metodoPago === 'cupo' ? 'firma' : 'resumen');
+      setStep('resumen');
     }
-  };
-
-  const confirmarCompra = () => {
-    if (metodoPago === 'cupo') {
-      setStep('firma');
-    } else {
-      setStep('confirmando');
-      ejecutarCompra(null);
-    }
-  };
-
-  const firmarYConfirmar = () => {
-    setStep('confirmando');
-    ejecutarCompra(firmaBase64);
   };
 
   return (
@@ -130,27 +99,21 @@ export default function PurchaseFlow() {
       {step === 'cantidad' && (
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 14 }}>¿Cuántas unidades quieres comprar?</div>
-          {maxUnidades < 1 ? (
-            <EmptyState title="Este beneficio no admite compras" description="Consulta con tu entidad." actionLabel="Volver al catálogo" onAction={() => navigate('/portal/catalogo')} />
-          ) : (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <IconButton label="Menos" onClick={() => setCantidad((c) => Math.max(1, c - 1))} icon={<span style={{ fontSize: 18, lineHeight: 1 }}>−</span>} />
-                <span className="text-display tabular" style={{ minWidth: 48, textAlign: 'center' }}>{cantidad}</span>
-                <IconButton label="Más" onClick={() => setCantidad((c) => Math.min(maxUnidades, c + 1))} icon={<span style={{ fontSize: 18, lineHeight: 1 }}>+</span>} />
-                <span className="text-caption">máximo {maxUnidades} por esta compra</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', paddingTop: 16, borderTop: '1px solid var(--border-default)' }}>
-                <span className="text-small">Precio unitario</span>
-                <span className="tabular" style={{ fontWeight: 500 }}>{formatCOP(convenio.precio_beet)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-                <span style={{ fontWeight: 600 }}>Subtotal</span>
-                <span className="tabular" style={{ fontWeight: 600, fontSize: 18 }}>{formatCOP(total)}</span>
-              </div>
-              <Button style={{ width: '100%' }} onClick={() => setStep('pago')}>Continuar</Button>
-            </>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <IconButton label="Menos" onClick={() => setCantidad((c) => Math.max(1, c - 1))} icon={<span style={{ fontSize: 18, lineHeight: 1 }}>−</span>} />
+            <span className="text-display tabular" style={{ minWidth: 48, textAlign: 'center' }}>{cantidad}</span>
+            <IconButton label="Más" onClick={() => setCantidad((c) => Math.min(maxUnidades, c + 1))} icon={<span style={{ fontSize: 18, lineHeight: 1 }}>+</span>} />
+            <span className="text-caption">máximo {maxUnidades} por esta compra</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', paddingTop: 16, borderTop: '1px solid var(--border-default)' }}>
+            <span className="text-small">Precio unitario</span>
+            <span className="tabular" style={{ fontWeight: 500 }}>{formatCOP(convenio.precio)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+            <span style={{ fontWeight: 600 }}>Subtotal</span>
+            <span className="tabular" style={{ fontWeight: 600, fontSize: 18 }}>{formatCOP(total)}</span>
+          </div>
+          <Button style={{ width: '100%' }} onClick={() => setStep('pago')}>Continuar</Button>
         </Card>
       )}
 
@@ -158,43 +121,24 @@ export default function PurchaseFlow() {
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 14 }}>Forma de pago</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
-            <Radio name="pago" label="Tarjeta débito o crédito" checked={metodoPago === 'tarjeta'} onChange={() => setMetodoPago('tarjeta')} />
-            <Radio name="pago" label="Cupo de crédito de la entidad" checked={metodoPago === 'cupo'} disabled={!cupo} onChange={() => setMetodoPago('cupo')} />
-            {!cupo && <div className="text-caption" style={{ marginLeft: 26 }}>No tienes un cupo de crédito asignado.</div>}
+            <Radio name="pago" label="Tarjeta débito o crédito" checked={metodoPago === 'TARJETA'} onChange={() => setMetodoPago('TARJETA')} />
+            <Radio name="pago" label="Cupo de crédito de la entidad" checked={metodoPago === 'CUPO'} onChange={() => setMetodoPago('CUPO')} />
           </div>
 
-          {metodoPago === 'tarjeta' && (
-            <div style={{ marginBottom: 20 }}>
-              <Field label="Número de tarjeta">
-                <Input
-                  inputMode="numeric"
-                  placeholder="4111 1111 1111 0000"
-                  value={numeroTarjeta}
-                  onChange={(e) => setNumeroTarjeta(e.target.value.replace(/[^0-9]/g, ''))}
-                  maxLength={19}
-                />
-              </Field>
-              {import.meta.env.DEV && (
-                <div className="text-caption" style={{ marginTop: 10, background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 8, padding: 10 }}>
-                  <strong>Solo en desarrollo · tarjetas de prueba (sandbox, sin pasarela real):</strong>
-                  <div>Termina en 0000 → aprobada</div>
-                  <div>Termina en 0001 → rechazada (fondos insuficientes)</div>
-                  <div>Termina en 0002 → rechazada (tarjeta inválida/vencida)</div>
-                  <div>Termina en 0003 → error de la pasarela (timeout)</div>
-                  <div>Cualquier otro número → aprobada por defecto</div>
-                </div>
-              )}
-            </div>
+          {metodoPago === 'TARJETA' && (
+            <Alert tone="info" title="Sin pasarela de pago real en esta integración">
+              El backend actual registra la compra como completada de inmediato — no valida datos de tarjeta ni conecta con una pasarela real todavía.
+            </Alert>
           )}
 
-          {metodoPago === 'cupo' && cupo && (
+          {metodoPago === 'CUPO' && (
             <div style={{ marginBottom: 20 }}>
-              <div className="progress-track" style={{ marginBottom: 8 }}>
-                <div className="progress-fill green" style={{ width: `${percent(cupo.cupo_total - cupo.cupo_disponible, cupo.cupo_total)}%` }} />
-              </div>
-              <div className="text-caption" style={{ marginBottom: 16 }}>Cupo disponible: {formatCOP(cupoDisponible)}</div>
+              <Alert tone="info" title="No podemos mostrar tu saldo de cupo aquí">
+                El backend actual no tiene un endpoint para que consultes tu propio cupo — si no te alcanza, el error real
+                aparecerá al confirmar la compra.
+              </Alert>
 
-              <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>Número de cuotas</label>
+              <label className="field-label" style={{ display: 'block', margin: '16px 0 6px' }}>Número de cuotas</label>
               <Select value={cuotas} onChange={(e) => setCuotas(Number(e.target.value))} style={{ marginBottom: 12 }}>
                 {CUOTAS_OPCIONES.map((n) => <option key={n} value={n}>{cuotasLabel(n)}</option>)}
               </Select>
@@ -209,7 +153,7 @@ export default function PurchaseFlow() {
 
           <div style={{ display: 'flex', gap: 10 }}>
             <Button variant="secondary" onClick={() => setStep('cantidad')}>Atrás</Button>
-            <Button style={{ flex: 1 }} disabled={cupoInsuficiente || (metodoPago === 'tarjeta' && numeroTarjeta.length < 4)} onClick={() => setStep('resumen')}>Continuar</Button>
+            <Button style={{ flex: 1 }} disabled={cupoInsuficiente} onClick={() => setStep('resumen')}>Continuar</Button>
           </div>
         </Card>
       )}
@@ -219,18 +163,15 @@ export default function PurchaseFlow() {
           <div className="text-label" style={{ marginBottom: 14 }}>Resumen de tu compra</div>
           {compraError && (
             <div style={{ marginBottom: 16 }}>
-              <Alert tone="error" title={compraErrorTipo === 'error_pasarela' ? 'Error de la pasarela de pago' : 'Pago rechazado'}>
-                {compraError}
-                {compraErrorTipo === 'error_pasarela' && ' Puedes reintentar sin perder los datos de tu compra.'}
-              </Alert>
+              <Alert tone="error" title="No fue posible completar la compra">{compraError}</Alert>
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
             <Row label="Beneficio" value={convenio.nombre} />
             <Row label="Cantidad" value={`${cantidad} unidad${cantidad > 1 ? 'es' : ''}`} />
-            <Row label="Precio unitario" value={formatCOP(convenio.precio_beet)} />
-            <Row label="Forma de pago" value={metodoPago === 'tarjeta' ? 'Tarjeta débito/crédito' : `Cupo de la entidad · ${cuotasLabel(cuotas)}`} />
-            {metodoPago === 'cupo' && <Row label="Cupo disponible después de esta compra" value={formatCOP(cupoDisponible - total)} />}
+            <Row label="Precio unitario" value={formatCOP(convenio.precio)} />
+            <Row label="Forma de pago" value={metodoPago === 'TARJETA' ? 'Tarjeta débito/crédito' : `Cupo de la entidad · ${cuotasLabel(cuotas)}`} />
+            {metodoPago === 'CUPO' && cupoDisponible != null && <Row label="Cupo disponible después de esta compra" value={formatCOP(cupoDisponible - total)} />}
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border-default)' }}>
               <span style={{ fontWeight: 600 }}>Total a pagar</span>
               <span className="tabular" style={{ fontWeight: 600, fontSize: 20 }}>{formatCOP(total)}</span>
@@ -244,38 +185,7 @@ export default function PurchaseFlow() {
       )}
 
       {step === 'confirmando' && (
-        <LoadingState title="Procesando tu pago" description="No cierres esta ventana. Estamos asignando tu código." />
-      )}
-
-      {step === 'firma' && (
-        <Card padding="card-pad-lg">
-          <div className="text-label" style={{ marginBottom: 10 }}>Documento de asunción de deuda</div>
-          {compraError && (
-            <div style={{ marginBottom: 16 }}>
-              <Alert tone="error" title="No fue posible completar la compra">{compraError}</Alert>
-            </div>
-          )}
-          <div className="grid grid-2" style={{ marginBottom: 16 }}>
-            <Row label="Valor" value={formatCOP(total)} />
-            <Row label="Cuotas" value={cuotasLabel(cuotas)} />
-          </div>
-          <p className="text-small" style={{ background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 10, padding: 14 }}>
-            El afiliado autoriza a la entidad a descontar del cupo de crédito asignado el valor de la compra realizada, en el número de cuotas seleccionado, y reconoce esta obligación como una deuda exigible frente a la entidad.
-          </p>
-          <div className="text-label" style={{ margin: '18px 0 8px' }}>Firma</div>
-          <SignaturePad onChange={setFirmaBase64} />
-          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <Button variant="secondary" onClick={() => setStep('resumen')}>Atrás</Button>
-            <Button style={{ flex: 1 }} disabled={!firmaBase64} onClick={firmarYConfirmar}>Firmar y confirmar compra</Button>
-          </div>
-          <button
-            onClick={() => navigate(`/portal/catalogo/${convenio.id}`)}
-            className="text-small"
-            style={{ background: 'none', border: 'none', padding: '8px 4px', margin: '6px -4px 0', cursor: 'pointer', color: 'var(--text-muted)', textDecoration: 'underline', minHeight: 32 }}
-          >
-            Cancelar compra
-          </button>
-        </Card>
+        <LoadingState title="Procesando tu compra" description="No cierres esta ventana. Estamos asignando tu código." />
       )}
 
       {step === 'resultado' && resultado && (
@@ -286,9 +196,9 @@ export default function PurchaseFlow() {
           <Card padding="card-pad-lg" style={{ marginTop: 18 }}>
             <div className="text-label" style={{ marginBottom: 10 }}>Códigos asignados</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {resultado.codigos.map((c) => (
-                <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 8, padding: '10px 12px' }}>
-                  <span className="text-mono" style={{ flex: 1 }}>{c}</span>
+              {resultado.tickets.map((t) => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 8, padding: '10px 12px' }}>
+                  <span className="text-mono" style={{ flex: 1 }}>{t.codigo}</span>
                 </div>
               ))}
             </div>

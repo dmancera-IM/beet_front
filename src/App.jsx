@@ -4,14 +4,11 @@ import RequireRole from './components/layout/RequireRole';
 import { ROLES_DISPLAY } from './utils/roles';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
-import EntrarAdministrador from './pages/EntrarAdministrador';
-import EntrarAfiliado from './pages/EntrarAfiliado';
 import Dashboard from './pages/Dashboard';
 import SuperAdminDashboard from './pages/admin/superadmin/SuperAdminDashboard';
 import GesDashboard from './pages/admin/ges/GesDashboard';
 import CooperativasList from './pages/admin/ges/CooperativasList';
 import CooperativaDetail from './pages/admin/ges/CooperativaDetail';
-import ConveniosCatalogo from './pages/admin/ges/ConveniosCatalogo';
 import Storage from './pages/admin/ges/Storage';
 import ComprarBonos from './pages/admin/ges/ComprarBonos';
 import GesTransacciones from './pages/admin/ges/GesTransacciones';
@@ -53,19 +50,12 @@ import Profile from './pages/portal/Profile';  //perfil afiliado
 import PortalRegister from './pages/portal/PortalRegister';
 import PurchaseFlow from './pages/portal/PurchaseFlow';
 import MyTickets from './pages/portal/MyTickets';
+import MyDocuments from './pages/portal/MyDocuments';
+import DocumentDetail from './pages/portal/DocumentDetail';
 import TicketDetail from './pages/portal/TicketDetail';
 import Notificaciones from './pages/portal/Notificaciones';
 import EditProfile from './pages/portal/EditProfile';
 import PortalNotFound from './pages/portal/PortalNotFound'; //pafina de error portalafiliadd
-
-// NOT routed yet — the debt-assumption document (generated during a cupo
-// purchase, see backend/app/services/transaction_service.py) has no
-// affiliate-facing download endpoint mounted this pass (only the ticket
-// PDF does, via /api/tickets/me/{id}/descarga). Their page files still
-// exist in pages/portal/ as scaffolding for a future pass — see
-// frontend/README.md.
-// import MyDocuments from './pages/portal/MyDocuments';
-// import DocumentDetail from './pages/portal/DocumentDetail';
 
 // Páginas del panel de una cooperativa, compartidas literalmente entre las
 // tres áreas que las usan (/admin, /lector, /super-admin) — mismo
@@ -97,10 +87,8 @@ const paginasCooperativa = (
 export default function App() {
   return (
     <Routes>
-      {/* ===== Entrada única + login real (Login/PortalLogin siguen intactos) ===== */}
+      {/* ===== Entrada única + login real ===== */}
       <Route path="/" element={<Landing />} />
-      <Route path="/entrar/administrador" element={<EntrarAdministrador />} />
-      <Route path="/entrar/afiliado" element={<EntrarAfiliado />} />
       <Route path="/login" element={<Login />} />
 
       {/* ===== GES — independiente, sin cooperativa_id (secciones 4-10) ===== */}
@@ -115,7 +103,11 @@ export default function App() {
         <Route index element={<GesDashboard />} />
         <Route path="cooperativas" element={<CooperativasList />} />
         <Route path="cooperativas/:id" element={<CooperativaDetail />} />
-        <Route path="convenios" element={<ConveniosCatalogo />} />
+        <Route path="usuarios" element={<UsuariosList />} />
+        <Route path="convenios" element={<ConveniosList />} />
+        <Route path="convenios/nuevo" element={<ConvenioForm />} />
+        <Route path="convenios/:id" element={<ConvenioDetail />} />
+        <Route path="convenios/:id/editar" element={<ConvenioForm />} />
         <Route path="storage" element={<Storage />} />
         <Route path="compras" element={<ComprarBonos />} />
         <Route path="transacciones" element={<GesTransacciones />} />
@@ -204,6 +196,8 @@ export default function App() {
         <Route path="comprar/:id" element={<PurchaseFlow />} />
         <Route path="tickets" element={<MyTickets />} />
         <Route path="tickets/:id" element={<TicketDetail />} />
+        <Route path="documentos" element={<MyDocuments />} />
+        <Route path="documentos/:id" element={<DocumentDetail />} />
         <Route path="notificaciones" element={<Notificaciones />} />
         <Route path="*" element={<PortalNotFound />} />
       </Route>

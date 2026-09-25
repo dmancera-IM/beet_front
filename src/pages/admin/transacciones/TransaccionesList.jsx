@@ -34,29 +34,26 @@ export default function TransaccionesList() {
     setLoading(true);
     setError(null);
     Promise.all([
-      transaccionesService.listarTransacciones({ pageSize: 100 }),
-      afiliadosService.listarAfiliados({ pageSize: 100 }),
-      convenioService.listarConvenios({ pageSize: 100 }),
+      transaccionesService.listarTransacciones({ cooperativaId: selectedId || undefined }),
+      afiliadosService.listarAfiliados({ cooperativaId: selectedId || undefined }),
+      convenioService.listarConvenios(),
+      convenioService.listarProductos({}),
     ])
-      .then(([trxData, afiliadosData, conveniosData]) => {
-        setTransacciones(trxData.items);
-        setAfiliadosPorId(Object.fromEntries(afiliadosData.items.map((a) => [a.id, a])));
-        // Las transacciones ahora referencian un PRODUCTO (id_producto), no
-        // un convenio (un convenio puede tener varios productos, sección
-        // 7) — se arma un mapa producto_id -> {nombre, convenio} a partir
-        // de los productos de cada convenio de esta cooperativa.
-        return Promise.all(
-          conveniosData.items.map((c) =>
-            convenioService
-              .listarProductosDeConvenio(c.id_convenio)
-              .then((productos) => productos.map((p) => [p.id, { ...p, convenioNombre: c.nombre, convenio: c }]))
-              .catch(() => [])
+      .then(([trxData, afiliadosData, convenios, productos]) => {
+        setTransacciones(trxData);
+        setAfiliadosPorId(Object.fromEntries(afiliadosData.map((a) => [a.id, a])));
+        // Las transacciones referencian un PRODUCTO (id_producto) — se arma
+        // un mapa producto_id -> {nombre, convenioNombre, convenio}.
+        const conveniosPorId = Object.fromEntries(convenios.map((c) => [c.id, c]));
+        setProductosPorId(
+          Object.fromEntries(
+            productos.map((p) => [p.id, { ...p, convenioNombre: conveniosPorId[p.id_convenio]?.nombre, convenio: conveniosPorId[p.id_convenio] }])
           )
-        ).then((grupos) => setProductosPorId(Object.fromEntries(grupos.flat())));
+        );
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No pudimos cargar las transacciones.'))
       .finally(() => setLoading(false));
-  }, [necesitaSeleccion]);
+  }, [necesitaSeleccion, selectedId]);
 
   useEffect(() => { cargar(); }, [cargar, selectedId]);
 
@@ -118,7 +115,7 @@ export default function TransaccionesList() {
             </label>
             <Select style={{ width: 170 }} value={filters.id_producto ?? ''} onChange={(e) => setFilter('id_producto', e.target.value)}>
               <option value="">Todo convenio</option>
-              {productos.map((p) => <option key={p.id} value={p.id}>{p.convenioNombre} · {p.nombre}{!p.convenio.estado ? ' (inactivo)' : ''}</option>)}
+              {productos.map((p) => <option key={p.id} value={p.id}>{p.convenioNombre} · {p.nombre}{!p.convenio?.estado ? ' (inactivo)' : ''}</option>)}
             </Select>
             <Select style={{ width: 150 }} value={filters.metodo_pago ?? ''} onChange={(e) => setFilter('metodo_pago', e.target.value)}>
               <option value="">Todo pago</option>
@@ -127,8 +124,8 @@ export default function TransaccionesList() {
             </Select>
             <Select style={{ width: 150 }} value={filters.estado ?? ''} onChange={(e) => setFilter('estado', e.target.value)}>
               <option value="">Todo estado</option>
-              <option value="rechazada">rechazada</option>
-              <option value="aprobada">aprobada</option>
+              <option value="PENDIENTE">Pendiente</option>
+              <option value="COMPLETADA">Completada</option>
             </Select>
           </div>
         </div>

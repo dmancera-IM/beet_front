@@ -1,62 +1,119 @@
-import { apiClient } from "./apiClient";
-
-// `cooperativaId` is only ever meaningful for a SUPER_ADMIN, who
-// administers every cooperativa — omit it to list every usuario across
-// all of them. `estado` (true/false) and `q` (free text — matches the
-// usuario's nombre/correo OR its cooperativa's nombre) are both optional.
+// Real cooperativas + usuarios administrativos + bolsa/crédito, backed by
+// beet_backend/app/routers/{cooperativas,usuarios,financiero}.py.
 //
-// `skipCooperativaScope: true` on every call in this section (usuarios +
-// cooperativas management) is NOT optional to drop: these endpoints are
-// cross-cooperativa by design (see app/routers/admin.py). Without it,
-// apiClient silently injects whatever cooperativa a SUPER_ADMIN happens
-// to have selected in the persistent header selector into the request —
-// which would make a usuario belonging to any OTHER cooperativa (or a
-// SUPER_ADMIN with no cooperativa at all) simply vanish from the list,
-// looking exactly like the list "not refreshing" after a create/delete
-// when in fact the row was never fetched at all.
-export function listarUsuariosAdmin(cooperativaId, { estado, q } = {}) {
+// `cooperativaId` is only ever meaningful for a SUPER_ADMIN/GES (the only
+// roles that can see more than their own cooperativa) — the real backend
+// reads an ADMIN/LECTOR's scope from their JWT, never from a request
+// param (see beet_backend/app/dependencies/scope.py). Passing
+// `cooperativaId` here for a SUPER_ADMIN/GES is what lets them pick which
+// cooperativa an operation applies to.
+import { apiClient, ApiError } from "./apiClient";
+
+// ---- Usuarios administrativos (GET/POST/PATCH /usuarios) -------------------
+//
+// NOTA sobre `q` (búsqueda libre): el backend real no soporta este
+// parámetro (solo filtra por id_cooperativa/rol) — se filtra aquí mismo,
+// en el cliente, sobre la lista ya traída, para no inventar un parámetro
+// que el backend no expone.
+export async function listarUsuariosAdmin(cooperativaId, { estado, q, rol } = {}) {
   const params = new URLSearchParams();
-  if (cooperativaId) params.set("cooperativa_id", cooperativaId);
-  if (estado !== undefined && estado !== null && estado !== "") params.set("estado", estado);
-  if (q) params.set("q", q);
+  if (cooperativaId) params.set("id_cooperativa", cooperativaId);
+  if (rol) params.set("rol", rol);
   const query = params.toString();
-  return apiClient.get(`/api/admin/usuarios${query ? `?${query}` : ""}`, { tokenAudience: "admin", skipCooperativaScope: true });
+  const usuarios = await apiClient.get(`/usuarios${query ? `?${query}` : ""}`, { tokenAudience: "admin" });
+
+  let rows = usuarios;
+  if (estado !== undefined && estado !== null && estado !== "") {
+    const estadoBool = estado === true || estado === "true";
+    rows = rows.filter((u) => u.estado === estadoBool);
+  }
+  if (q && q.trim()) {
+    const term = q.trim().toLowerCase();
+    rows = rows.filter((u) => u.nombre.toLowerCase().includes(term) || u.correo.toLowerCase().includes(term));
+  }
+
+  // El backend no devuelve `cooperativa_nombre` (solo `id_cooperativa`) —
+  // se enriquece aquí con la lista de cooperativas para no perder esa
+  // columna de la tabla existente.
+  const cooperativas = await listarCooperativas().catch(() => []);
+  const nombrePorId = new Map(cooperativas.map((c) => [c.id, c.nombre]));
+  return rows.map((u) => ({
+    ...u,
+    cooperativa_id: u.id_cooperativa,
+    cooperativa_nombre: u.id_cooperativa ? nombrePorId.get(u.id_cooperativa) ?? null : null,
+  }));
 }
 
-export function crearUsuarioAdmin(payload) {
-  return apiClient.post("/api/admin/usuarios", payload, { tokenAudience: "admin", skipCooperativaScope: true });
+export function crearUsuarioAdmin({ nombre, correo, password, rol, cooperativa_id }) {
+  return apiClient.post(
+    "/usuarios",
+    { nombre, correo, password, rol, id_cooperativa: cooperativa_id ?? null },
+    { tokenAudience: "admin" }
+  );
 }
 
 export function actualizarUsuarioAdmin(id, payload) {
-  return apiClient.patch(`/api/admin/usuarios/${id}`, payload, { tokenAudience: "admin", skipCooperativaScope: true });
+  // El backend solo acepta nombre/estado/password en PATCH /usuarios/{id}
+  // (nunca rol ni id_cooperativa — evita romper el CHECK de la tabla).
+  const { nombre, estado, password } = payload;
+  return apiClient.patch(`/usuarios/${id}`, { nombre, estado, password }, { tokenAudience: "admin" });
 }
 
-// Real, permanent DELETE — distinct from actualizarUsuarioAdmin(id, {estado:
-// false}), which only revokes access while keeping the row (and its audit
-// history) intact. Resolves with no body (204 No Content) on success.
-export function eliminarUsuarioAdmin(id) {
-  return apiClient.delete(`/api/admin/usuarios/${id}`, { tokenAudience: "admin", skipCooperativaScope: true });
+// PENDIENTE: el backend real no expone DELETE /usuarios/{id} (decisión
+// documentada: borrar un usuario rompería el historial de
+// solicitudes_compra.id_usuario). Usa `actualizarUsuarioAdmin(id, {estado:
+// false})` para revocar el acceso en su lugar.
+export function eliminarUsuarioAdmin() {
+  return Promise.reject(
+    new ApiError("Eliminar usuarios no está disponible: el backend actual no expone este endpoint. Usa \"Desactivar acceso\".", 501, null)
+  );
 }
 
-// Bare list of every cooperativa (id/nombre/estado only) — used to
-// populate the cooperativa selector/filter on the usuarios screen.
+// ---- Cooperativas (GET/POST/PATCH /cooperativas) ----------------------------
+
 export function listarCooperativas() {
-  return apiClient.get("/api/admin/cooperativas", { tokenAudience: "admin", skipCooperativaScope: true });
+  return apiClient.get("/cooperativas", { tokenAudience: "admin" });
 }
 
 export function crearCooperativa(payload) {
-  return apiClient.post("/api/admin/cooperativas", payload, { tokenAudience: "admin", skipCooperativaScope: true });
+  return apiClient.post("/cooperativas", payload, { tokenAudience: "admin" });
 }
 
-export function obtenerCooperativa() {
-  return apiClient.get("/api/admin/cooperativa", { tokenAudience: "admin" });
+export function obtenerCooperativa(id) {
+  return apiClient.get(`/cooperativas/${id}`, { tokenAudience: "admin" });
 }
 
-export function actualizarCooperativa(payload) {
-  return apiClient.patch("/api/admin/cooperativa", payload, { tokenAudience: "admin" });
+export function actualizarCooperativa(id, payload) {
+  return apiClient.patch(`/cooperativas/${id}`, payload, { tokenAudience: "admin" });
 }
 
-export function listarLogsAuditoria({ page = 1, pageSize = 50 } = {}) {
-  const params = new URLSearchParams({ page, page_size: pageSize });
-  return apiClient.get(`/api/admin/logs?${params.toString()}`, { tokenAudience: "admin" });
+// ---- Bolsa / Crédito (GET/PATCH /cooperativas/{id}/bolsa|credito) -----------
+
+export function obtenerBolsa(cooperativaId) {
+  return apiClient.get(`/cooperativas/${cooperativaId}/bolsa`, { tokenAudience: "admin" });
+}
+
+export function fijarBolsa(cooperativaId, valor) {
+  return apiClient.patch(`/cooperativas/${cooperativaId}/bolsa`, { valor }, { tokenAudience: "admin" });
+}
+
+export function obtenerCredito(cooperativaId) {
+  return apiClient.get(`/cooperativas/${cooperativaId}/credito`, { tokenAudience: "admin" });
+}
+
+export function fijarCredito(cooperativaId, cupo_autorizado) {
+  return apiClient.patch(`/cooperativas/${cooperativaId}/credito`, { cupo_autorizado }, { tokenAudience: "admin" });
+}
+
+export async function listarLogsAuditoria({ page = 1, pageSize = 20, cooperativaId, tablaAfectada, fechaInicio, fechaFin } = {}) {
+  const params = new URLSearchParams();
+  if (cooperativaId) params.set("cooperativa_id", cooperativaId);
+  if (tablaAfectada) params.set("tabla_afectada", tablaAfectada);
+  if (fechaInicio) params.set("fecha_inicio", fechaInicio);
+  if (fechaFin) params.set("fecha_fin", fechaFin);
+  const query = params.toString();
+  const rows = await apiClient.get(`/logs-auditoria${query ? `?${query}` : ""}`, { tokenAudience: "admin" });
+  const normalized = rows.map((r) => ({ ...r, created_at: r.fecha_creacion }));
+  const start = (page - 1) * pageSize;
+  return { items: normalized.slice(start, start + pageSize), total: normalized.length, page, page_size: pageSize };
 }

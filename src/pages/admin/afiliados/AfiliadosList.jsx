@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import Button from '../../../components/ui/Button';
 import { Field, Input, Select } from '../../../components/ui/Field';
 import { IconBuscar, IconDescargar, IconPlus, IconUpload } from '../../../components/ui/Icons';
 import { Pagination } from '../../../components/ui/Nav';
-import { KpiCard, Card } from '../../../components/ui/Card';
 import { StatusBadge } from '../../../components/ui/Badge';
 import Avatar from '../../../components/ui/Avatar';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
@@ -15,13 +14,14 @@ import Alert from '../../../components/ui/Alert';
 import PermissionGate from '../../../components/ui/PermissionGate';
 import { useTableState } from '../../../hooks/useTableState';
 import * as afiliadosService from '../../../services/afiliadosService';
+import * as cuposService from '../../../services/cuposService';
+import * as adminService from '../../../services/adminService';
 import * as reportesService from '../../../services/reportesService';
 import { ApiError } from '../../../services/apiClient';
 import { useToast } from '../../../context/ToastContext';
 import { useCooperativa } from '../../../context/CooperativaContext';
 import { formatCOP } from '../../../utils/format';
 import { useAreaBase } from '../../../hooks/useAreaBase';
-import { getMetricasAfiliados } from '../superadmin/superAdminData';
 
 const emptyCreateForm = { nombres: '', apellidos: '', documento: '', correo: '', telefono: '' };
 
@@ -41,11 +41,6 @@ export default function AfiliadosList() {
   const base = useAreaBase();
   const modoGlobal = necesitaSeleccion; // isSuperAdmin && !selectedId
 
-  // Métricas agregadas (secciones 10 y 11): GLOBAL cuando Súper admin no ha
-  // seleccionado ninguna entidad, scoped a esa entidad en cuanto selecciona
-  // una — el selector realmente filtra estos datos, no es solo visual.
-  const metricas = useMemo(() => (isSuperAdmin ? getMetricasAfiliados(selectedId ?? null) : null), [isSuperAdmin, selectedId]);
-
   const [afiliados, setAfiliados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -63,15 +58,35 @@ export default function AfiliadosList() {
   const cargarAfiliados = useCallback(() => {
     setLoading(true);
     setError(null);
-    // 100 covers the current test dataset — a future pass should page this
-    // properly against the backend's own page/page_size instead of fetching
-    // everything client-side.
-    afiliadosService
-      .listarAfiliados({ pageSize: 100 })
-      .then((data) => setAfiliados(data.items))
+    // El backend real siempre exige un cooperativa_id para SUPER_ADMIN/GES
+    // (no existe un "modo global" en un único endpoint) — en modo global se
+    // arma la lista real concatenando la de cada cooperativa.
+    const promesa = modoGlobal
+      ? adminService.listarCooperativas().then((coops) =>
+          Promise.all(coops.map((c) => afiliadosService.listarAfiliados({ cooperativaId: c.id }).then((rows) => rows.map((a) => ({ ...a, cooperativa_nombre: c.nombre }))))).then((arrays) =>
+            arrays.flat()
+          )
+        )
+      : afiliadosService.listarAfiliados({ cooperativaId: selectedId || undefined });
+
+    // El backend real no anida el cupo en la fila del afiliado (vive en
+    // GET /afiliados/{id}/cupo, tabla aparte) — se enriquece aquí con una
+    // llamada por afiliado, igual que ya hace AfiliadosListAdmin.jsx.
+    promesa
+      .then((rows) =>
+        Promise.all(
+          rows.map((a) =>
+            cuposService
+              .obtenerCupo(a.id)
+              .then((cupo) => ({ ...a, cupo_total: cupo.cupo_total, cupo_disponible: cupo.cupo_disponible }))
+              .catch(() => a)
+          )
+        )
+      )
+      .then(setAfiliados)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No pudimos cargar los afiliados.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [modoGlobal, selectedId]);
 
   useEffect(() => { cargarAfiliados(); }, [cargarAfiliados, selectedId]);
 
@@ -181,54 +196,6 @@ export default function AfiliadosList() {
           </div>
         )}
       </div>
-
-      {metricas && (
-        <>
-          <div className="grid grid-kpi section-gap">
-            <KpiCard label="Total afiliados" value={metricas.totalAfiliados} deltaTone="neutral" delta={modoGlobal ? 'Todas las entidades' : selected?.nombre ?? ''} />
-            <KpiCard label="Activos" value={metricas.activos} deltaTone="neutral" delta={`${metricas.inactivos} inactivos`} />
-            <KpiCard label="Compras completadas" value={metricas.cantidadCompras} deltaTone="neutral" delta="Transacciones de afiliados" />
-            <KpiCard label="Valor de compras" value={formatCOP(metricas.valorCompras)} deltaTone="neutral" delta="Acumulado" />
-          </div>
-
-          <div className="grid grid-2 section-gap">
-            {modoGlobal && (
-              <Card padding="card-pad">
-                <div className="text-label" style={{ marginBottom: 14 }}>Afiliados por entidad</div>
-                {metricas.porEntidad.length === 0 ? (
-                  <div className="text-small cell-muted">Sin entidades registradas.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {metricas.porEntidad.map((e) => (
-                      <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                        <span>{e.nombre}</span>
-                        <span className="tabular" style={{ fontWeight: 600 }}>{e.afiliados}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            )}
-            <Card padding="card-pad">
-              <div className="text-label" style={{ marginBottom: 14 }}>
-                Productos más comprados {modoGlobal ? 'por todos los afiliados' : `por afiliados de ${selected?.nombre ?? 'esta entidad'}`}
-              </div>
-              {metricas.productosMasComprados.length === 0 ? (
-                <div className="text-small cell-muted">Sin compras registradas todavía.</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {metricas.productosMasComprados.map((p) => (
-                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                      <span>{p.nombre}</span>
-                      <span className="tabular" style={{ fontWeight: 600 }}>{p.cantidad}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
-        </>
-      )}
 
       <div className="table-card">
         <div className="table-toolbar">

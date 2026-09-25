@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { Card } from '../../components/ui/Card';
 import { Field, Input } from '../../components/ui/Field';
 import Button from '../../components/ui/Button';
+import Alert from '../../components/ui/Alert';
 
 // Identity fields (nombres/apellidos/documento) come from the
 // cooperative's roster and are read-only here — the backend's
@@ -49,6 +50,11 @@ export default function EditProfile() {
           <p className="page-subtitle">Tu nombre y cédula los administra tu entidad; aquí puedes actualizar tus datos de contacto.</p>
         </div>
       </div>
+
+      <Alert tone="info" title="No disponible en esta integración">
+        El backend actual no expone un endpoint para que el propio afiliado actualice su perfil — solo un administrador de tu
+        entidad puede hacerlo. Puedes ver el formulario, pero guardar fallará.
+      </Alert>
 
       <form onSubmit={handleSubmit}>
         <Card padding="card-pad-lg" style={{ maxWidth: 480 }}>

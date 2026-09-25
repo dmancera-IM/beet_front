@@ -6,12 +6,10 @@ import Button from '../../components/ui/Button';
 import TicketCard from '../../components/portal/TicketCard';
 import * as ticketsService from '../../services/ticketsService';
 import * as convenioService from '../../services/convenioService';
-import { useToast } from '../../context/ToastContext';
 
 export default function TicketDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { push } = useToast();
 
   const [ticket, setTicket] = useState(undefined); // undefined = loading, null = not found/not yours
   const [convenio, setConvenio] = useState(null);
@@ -26,20 +24,6 @@ export default function TicketDetail() {
       })
       .catch((err) => setError(err.message));
   }, [id]);
-
-  const descargar = async () => {
-    try {
-      // The backend serves raw PDF bytes directly, not a JSON envelope
-      // with a URL — turn the Blob into a same-tab object URL the browser
-      // can open/download, then release it once the tab has it loaded.
-      const blob = await ticketsService.descargarMiTicket(ticket.id);
-      const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    } catch (err) {
-      push({ title: 'No se pudo descargar el ticket', description: err.message, variant: 'error' });
-    }
-  };
 
   if (error) return <ErrorState description={error} onRetry={() => window.location.reload()} />;
   if (ticket === undefined) return <LoadingState title="Cargando ticket…" />;
@@ -65,9 +49,9 @@ export default function TicketDetail() {
             <Row label="Producto" value={convenio?.nombre} />
             <Row label="Descripción" value={convenio?.descripcion} />
           </div>
-          <Button variant="secondary" onClick={descargar}>Generar PDF</Button>
+          <Button variant="secondary" disabled title="El backend actual no expone la descarga en PDF del ticket">Generar PDF</Button>
           <p className="text-caption cell-muted" style={{ marginTop: 10 }}>
-            El PDF incluye el código QR y de barras para presentar o redimir tu beneficio.
+            El código de tu ticket es <strong className="text-mono">{ticket.codigo}</strong>. La descarga en PDF no está disponible todavía en el backend actual.
           </p>
         </Card>
       </div>

@@ -13,6 +13,7 @@ import { NavLink } from 'react-router-dom';
 const ITEMS = [
   { to: '/ges', label: 'Dashboard', end: true },
   { to: '/ges/cooperativas', label: 'Entidades' },
+  { to: '/ges/usuarios', label: 'Usuarios' },
   { to: '/ges/storage', label: 'Storage' },
   { to: '/ges/convenios', label: 'Convenios' },
   { to: '/ges/compras', label: 'Carga de bonos y boletas' },

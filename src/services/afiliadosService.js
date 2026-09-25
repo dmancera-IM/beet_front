@@ -1,40 +1,59 @@
-import { apiClient } from "./apiClient";
+// Afiliados reales (beet_backend/app/routers/afiliados.py). Solo ADMIN
+// puede crear/editar (el backend obtiene su cooperativa del JWT, nunca del
+// body); GES/SUPER_ADMIN/LECTOR también pueden listar/consultar.
+import { apiClient, ApiError } from "./apiClient";
 
-export function listarAfiliados({ page = 1, pageSize = 20, sortBy, estado, q } = {}) {
-  const params = new URLSearchParams({ page, page_size: pageSize });
-  if (sortBy) params.set("sort_by", sortBy);
-  if (estado) params.set("estado", estado);
-  if (q) params.set("q", q);
-  return apiClient.get(`/api/afiliados?${params.toString()}`, { tokenAudience: "admin" });
+export async function listarAfiliados({ cooperativaId, estado, q } = {}) {
+  const params = new URLSearchParams();
+  if (cooperativaId) params.set("cooperativa_id", cooperativaId);
+  if (estado !== undefined && estado !== null && estado !== "") params.set("estado", estado);
+  const query = params.toString();
+  const afiliados = await apiClient.get(`/afiliados${query ? `?${query}` : ""}`, { tokenAudience: "admin" });
+  // `q` (búsqueda libre) no existe en el backend real — se filtra aquí.
+  if (!q || !q.trim()) return afiliados;
+  const term = q.trim().toLowerCase();
+  return afiliados.filter((a) => `${a.nombres} ${a.apellidos} ${a.documento} ${a.correo}`.toLowerCase().includes(term));
 }
 
 export function obtenerAfiliado(id) {
-  return apiClient.get(`/api/afiliados/${id}`, { tokenAudience: "admin" });
+  return apiClient.get(`/afiliados/${id}`, { tokenAudience: "admin" });
 }
 
 export function crearAfiliado(payload) {
-  return apiClient.post("/api/afiliados", payload, { tokenAudience: "admin" });
+  return apiClient.post("/afiliados", payload, { tokenAudience: "admin" });
 }
 
 export function actualizarAfiliado(id, payload) {
-  return apiClient.patch(`/api/afiliados/${id}`, payload, { tokenAudience: "admin" });
+  return apiClient.patch(`/afiliados/${id}`, payload, { tokenAudience: "admin" });
 }
 
-// Eliminación real (no un estado "retirado") — ver ADMIN → Afiliados.
-export function eliminarAfiliado(id) {
-  return apiClient.delete(`/api/afiliados/${id}`, { tokenAudience: "admin" });
+// PENDIENTE: el backend real no expone DELETE /afiliados/{id} (tampoco un
+// estado "RETIRADO" alternativo) — usa `actualizarAfiliado(id, {estado:
+// false})` para desactivar.
+export function eliminarAfiliado() {
+  return Promise.reject(new ApiError('Eliminar afiliados no está disponible: usa "Desactivar" en su lugar.', 501, null));
 }
 
-export function cargaMasivaAfiliados(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return apiClient.postForm("/api/afiliados/carga-masiva", formData, { tokenAudience: "admin" });
+// PENDIENTE: no hay endpoint de carga masiva de afiliados en el backend
+// real (ni un formato de archivo definido) — ver informe de integración.
+export function cargaMasivaAfiliados() {
+  return Promise.reject(new ApiError("La carga masiva de afiliados no está disponible: el backend actual no expone este endpoint.", 501, null));
 }
 
 export function miPerfilAfiliado() {
-  return apiClient.get("/api/afiliados/me", { tokenAudience: "afiliado" });
+  return apiClient.get("/afiliados/me", { tokenAudience: "afiliado" });
 }
 
 export function actualizarMiPerfilAfiliado(payload) {
-  return apiClient.patch("/api/afiliados/me", payload, { tokenAudience: "afiliado" });
+  return apiClient.patch("/afiliados/me", payload, { tokenAudience: "afiliado" });
+}
+
+// ---- Cupo de crédito del afiliado (GET/PATCH /afiliados/{id}/cupo) --------
+
+export function obtenerCupo(afiliadoId) {
+  return apiClient.get(`/afiliados/${afiliadoId}/cupo`, { tokenAudience: "admin" });
+}
+
+export function actualizarCupo(afiliadoId, { cupo_total, estado } = {}) {
+  return apiClient.patch(`/afiliados/${afiliadoId}/cupo`, { cupo_total, estado }, { tokenAudience: "admin" });
 }

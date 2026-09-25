@@ -9,15 +9,12 @@ import PermissionGate from '../../../components/ui/PermissionGate';
 import Button from '../../../components/ui/Button';
 import Alert from '../../../components/ui/Alert';
 import * as convenioService from '../../../services/convenioService';
+import * as inventarioService from '../../../services/inventarioService';
 import ProductoConfigModal from './ProductoConfigModal';
 import { useToast } from '../../../context/ToastContext';
+import { formatCOP } from '../../../utils/format';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
-// Detalle de un convenio para ADMIN (sección 10.3): muestra los productos
-// que pertenecen a ese convenio/proveedor (catálogo maestro de GES) y el
-// inventario disponible de cada uno. El precio NO se edita aquí — cada
-// producto se configura por separado (sección 10.4) porque el precio
-// pertenece a cooperativa + producto, nunca al convenio (sección 11).
 export default function ConvenioDetailAdmin() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -39,30 +36,43 @@ export default function ConvenioDetailAdmin() {
   const cargar = useCallback(() => {
     setLoading(true);
     setError(null);
-    convenioService
-      .obtenerConvenio(id)
-      .then((c) => {
-        setConvenio(c);
-        return convenioService.listarProductosCooperativa(c.id_convenio);
+    Promise.all([
+      convenioService.listarConveniosCooperativa(),
+      convenioService.listarProductosCooperativa(id),
+    ])
+      .then(async ([convenios, productosBase]) => {
+        const actual = convenios.find((c) => String(c.id_convenio) === String(id)) ?? null;
+        setConvenio(actual);
+        const productosConInventario = await Promise.all(
+          productosBase.map((p) =>
+            inventarioService
+              .resumenInventario(p.id_producto)
+              .then((r) => ({ ...p, disponible: r.disponible ?? 0 }))
+              .catch(() => ({ ...p, disponible: 0 }))
+          )
+        );
+        setProductos(productosConInventario);
       })
-      .then(setProductos)
-      .catch((err) => setError(err.status === 404 ? null : err.message))
+      .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  const inventarioTotal = productos.reduce((s, p) => s + (p.disponible ?? 0), 0);
+
   const toggleEstado = async () => {
+    if (!convenio) return;
     const nuevoEstado = !convenio.estado;
     if (nuevoEstado && !convenio.puede_activarse) {
-      push({ title: 'Configura el porcentaje de ganancia primero', description: 'Configura al menos un producto antes de activar este convenio.', variant: 'error' });
+      push({ title: 'Faltan datos para activar', description: 'Configura el porcentaje y al menos un producto activo con precio público.', variant: 'error' });
       return;
     }
     setSavingEstado(true);
     try {
-      const actualizado = await convenioService.actualizarConvenio(convenio.id, { estado: nuevoEstado });
-      setConvenio(actualizado);
+      await convenioService.cambiarEstadoConvenioCooperativa(convenio.id_convenio, nuevoEstado);
       push({ title: nuevoEstado ? 'Convenio activado' : 'Convenio desactivado', description: convenio.nombre });
+      cargar();
     } catch (err) {
       push({ title: 'No se pudo actualizar el convenio', description: err.message, variant: 'error' });
     } finally {
@@ -72,18 +82,14 @@ export default function ConvenioDetailAdmin() {
 
   if (loading) return <LoadingState title="Cargando convenio…" />;
   if (error) return <ErrorState description={error} onRetry={cargar} />;
-  if (!convenio) {
-    return <EmptyState title="Convenio no encontrado" description="Puede haber sido eliminado del catálogo." actionLabel="Volver a convenios" onAction={() => navigate(`${base}/convenios`)} />;
-  }
-
-  const inventarioTotal = productos.reduce((s, p) => s + (p.disponible ?? 0), 0);
+  if (!convenio) return <EmptyState title="Convenio no encontrado" actionLabel="Volver a convenios" onAction={() => navigate(`${base}/convenios`)} />;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">{convenio.nombre}</h1>
-          <p className="page-subtitle">Productos de este convenio y el inventario que tu entidad tiene disponible para cada uno.</p>
+          <p className="page-subtitle">Productos de este convenio y configuración de venta para tus afiliados.</p>
         </div>
         <div className="page-header-actions">
           <PermissionGate fallback={<StatusBadge status={convenio.estado} />}>
@@ -92,15 +98,15 @@ export default function ConvenioDetailAdmin() {
               checked={convenio.estado}
               onChange={toggleEstado}
               disabled={savingEstado || (!convenio.estado && !convenio.puede_activarse)}
-              title={!convenio.estado && !convenio.puede_activarse ? 'Configura el porcentaje de ganancia de un producto antes de activar' : undefined}
+              title={!convenio.estado && !convenio.puede_activarse ? 'Configura porcentaje y al menos un producto antes de activar' : undefined}
             />
           </PermissionGate>
         </div>
       </div>
 
       {!convenio.estado && !convenio.puede_activarse && (
-        <Alert tone="warning" title="Este convenio llegó desactivado">
-          Todavía falta configurar el porcentaje de ganancia de al menos un producto para poder venderlo a tus afiliados. Elige "Configurar" en la tabla de productos.
+        <Alert tone="warning" title="Faltan datos para activar este convenio">
+          Configura el porcentaje de ganancia y al menos un producto activo con precio público. El precio BEET se calcula automáticamente.
         </Alert>
       )}
 
@@ -112,7 +118,7 @@ export default function ConvenioDetailAdmin() {
           </span>
         </div>
         <p className="text-caption" style={{ margin: 0, color: 'var(--text-primary)' }}>
-          Se configura una sola vez para todo el convenio, desde la lista de Convenios — todos sus productos la heredan automáticamente.
+          Se configura desde la lista de convenios y todos los productos la heredan automáticamente.
         </p>
       </Card>
 
@@ -121,11 +127,8 @@ export default function ConvenioDetailAdmin() {
           <div className="text-label" style={{ color: 'var(--text-primary)' }}>Inventario total del convenio</div>
           <span className="tabular" style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)' }}>{inventarioTotal} unidades</span>
         </div>
-        {/* `cell-muted`/`text-caption` usan --text-muted (gris claro), poco
-            legible en esta card — se fuerza --text-primary (oscuro) solo
-            aquí, sin tocar esas clases compartidas por el resto de la app. */}
         <p className="text-caption" style={{ margin: 0, color: 'var(--text-primary)' }}>
-          Suma del inventario disponible de todos los productos de este convenio. Llega automáticamente cuando tu entidad adquiere inventario desde GES.
+          Suma del inventario disponible de todos los productos de este convenio.
         </p>
       </Card>
 
@@ -153,14 +156,14 @@ export default function ConvenioDetailAdmin() {
                       <div className="cell-muted">{p.descripcion_base ?? '—'}</div>
                     </td>
                     <td className="right tabular">{p.disponible} unidades</td>
-                    <td className="right tabular">{p.configurado ? `$${p.precio_beet.toLocaleString('es-CO')}` : '—'}</td>
-                    <td>
-                      {p.configurado ? <StatusBadge status={p.estado} /> : <span className="text-small cell-muted">Sin configurar</span>}
-                    </td>
+                    <td className="right tabular">{p.configurado && p.precio_beet != null ? formatCOP(p.precio_beet) : '—'}</td>
+                    <td>{p.configurado ? <StatusBadge status={p.estado} /> : <span className="text-small cell-muted">Sin configurar</span>}</td>
                     <td className="right">
-                      <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setProductoModal(p.id_producto); }}>
-                        {p.configurado ? 'Editar' : 'Configurar'}
-                      </Button>
+                      <PermissionGate>
+                        <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setProductoModal(p.id_producto); }}>
+                          {p.configurado ? 'Editar' : 'Configurar'}
+                        </Button>
+                      </PermissionGate>
                     </td>
                   </tr>
                 ))}
@@ -173,7 +176,7 @@ export default function ConvenioDetailAdmin() {
       <ProductoConfigModal
         open={!!productoModal}
         productoId={productoModal}
-        convenioId={convenio.id}
+        convenioId={convenio.id_convenio}
         convenioNombre={convenio.nombre}
         onClose={() => setProductoModal(null)}
         onSaved={() => { setProductoModal(null); cargar(); }}

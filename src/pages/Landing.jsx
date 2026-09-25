@@ -43,10 +43,10 @@ export default function Landing() {
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Button size="lg" style={{ width: '100%' }} onClick={() => navigate('/entrar/administrador')}>
+          <Button size="lg" style={{ width: '100%' }} onClick={() => navigate('/login')}>
             Administrador
           </Button>
-          <Button size="lg" variant="secondary" style={{ width: '100%' }} onClick={() => navigate('/entrar/afiliado')}>
+          <Button size="lg" variant="secondary" style={{ width: '100%' }} onClick={() => navigate('/portal/login')}>
             Afiliado
           </Button>
         </div>

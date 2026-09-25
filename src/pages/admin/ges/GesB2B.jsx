@@ -1,29 +1,58 @@
+import { useCallback, useEffect, useState } from 'react';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Input } from '../../../components/ui/Field';
 import { IconBuscar } from '../../../components/ui/Icons';
-import { EmptyState } from '../../../components/ui/States';
-import { useTableState } from '../../../hooks/useTableState';
+import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
 import GesNav from './GesNav';
 import SolicitudesTable from './SolicitudesTable';
-import { getSolicitudesB2B } from './gesData';
+import * as solicitudesService from '../../../services/solicitudesService';
+import * as adminService from '../../../services/adminService';
+import * as convenioService from '../../../services/convenioService';
+import { useToast } from '../../../context/ToastContext';
 
-// GES → B2B (sección 6): solicitudes de compra rápida/prioritaria hechas
-// por las entidades desde ADMIN → B2B. Reutiliza la misma tabla de
-// transacciones de siempre (GesTransacciones), solo que filtrada a
-// prioridad Alta — no es un flujo de aprobación nuevo, sigue siendo de
-// solo lectura con los mismos dos estados (Pendiente/Completada).
+// Real: filtra `solicitudes_compra` por `prioridad = 'ALTA'` (el único
+// campo del esquema real que corresponde a "compra rápida/prioritaria") —
+// reemplaza el mock `getSolicitudesB2B()` de gesData.js.
 export default function GesB2B() {
   useSetBreadcrumbs([{ label: 'GES', to: '/ges' }, { label: 'B2B' }]);
+  const { push } = useToast();
 
-  const solicitudes = getSolicitudesB2B();
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [cooperativasById, setCooperativasById] = useState({});
+  const [productosById, setProductosById] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
 
-  // Mismo concepto de búsqueda que GES → Transacciones: solo administrador
-  // de cooperativa o cooperativa, nunca afiliados (esta tabla tampoco los
-  // tiene).
-  const { search, setSearch, pageRows, total } = useTableState({
-    data: solicitudes,
-    searchFields: ['cooperativaNombre', 'administrador'],
-    pageSize: 50,
+  const cargar = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([solicitudesService.listarSolicitudes(), adminService.listarCooperativas(), convenioService.listarProductos({})])
+      .then(([sols, coops, prods]) => {
+        setSolicitudes(sols.filter((s) => s.prioridad === 'ALTA'));
+        setCooperativasById(Object.fromEntries(coops.map((c) => [c.id, c])));
+        setProductosById(Object.fromEntries(prods.map((p) => [p.id, p])));
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const completar = async (id) => {
+    try {
+      await solicitudesService.completarSolicitud(id);
+      push({ title: 'Solicitud completada', description: `Solicitud #${id}` });
+      cargar();
+    } catch (err) {
+      push({ title: 'No se pudo completar', description: err.message, variant: 'error' });
+    }
+  };
+
+  const filtradas = solicitudes.filter((s) => {
+    if (!search.trim()) return true;
+    const nombre = cooperativasById[s.id_cooperativa]?.nombre ?? '';
+    return nombre.toLowerCase().includes(search.trim().toLowerCase());
   });
 
   return (
@@ -31,7 +60,7 @@ export default function GesB2B() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">B2B</h1>
-          <p className="page-subtitle">Solicitudes de compra rápida y prioritaria hechas por las entidades.</p>
+          <p className="page-subtitle">Solicitudes de compra con prioridad alta hechas por las entidades.</p>
         </div>
       </div>
 
@@ -42,19 +71,19 @@ export default function GesB2B() {
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 280 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar administrador o cooperativa..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Buscar entidad..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
           </div>
         </div>
 
-        {pageRows.length === 0 ? (
-          total === 0 ? (
-            <EmptyState title="Sin solicitudes B2B todavía" description="Las compras rápidas/prioritarias que hagan las entidades aparecerán aquí." />
-          ) : (
-            <EmptyState title="Sin solicitudes que coincidan" description="Ajusta el término de búsqueda." />
-          )
+        {loading ? (
+          <LoadingState title="Cargando solicitudes desde PostgreSQL…" />
+        ) : error ? (
+          <ErrorState description={error} onRetry={cargar} />
+        ) : filtradas.length === 0 ? (
+          <EmptyState title="Sin solicitudes de prioridad alta" description="Las solicitudes con prioridad alta hechas por las entidades aparecerán aquí." />
         ) : (
-          <SolicitudesTable solicitudes={pageRows} />
+          <SolicitudesTable solicitudes={filtradas} cooperativasById={cooperativasById} productosById={productosById} onCompletar={completar} />
         )}
       </div>
     </div>

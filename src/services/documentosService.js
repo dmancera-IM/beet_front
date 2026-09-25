@@ -1,29 +1,55 @@
 import { apiClient } from "./apiClient";
 
-export function misDocumentos({ page = 1, pageSize = 20 } = {}) {
-  const params = new URLSearchParams({ page, page_size: pageSize });
-  return apiClient.get(`/api/documentos/me?${params.toString()}`, { tokenAudience: "afiliado" });
+function paginar(items, page = 1, pageSize = 20) {
+  const start = (page - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), total: items.length, page, page_size: pageSize };
 }
 
-export function descargarMiDocumento(id) {
-  return apiClient.getBlob(`/api/documentos/me/${id}/descarga`, { tokenAudience: "afiliado" });
+function documentoBlob(doc) {
+  const contenido = JSON.stringify(doc, null, 2);
+  return new Blob([contenido], { type: "application/json" });
 }
 
-export function listarDocumentos({ page = 1, pageSize = 20 } = {}) {
-  const params = new URLSearchParams({ page, page_size: pageSize });
-  return apiClient.get(`/api/documentos?${params.toString()}`, { tokenAudience: "admin" });
+function normalizarDocumento(d) {
+  return { ...d, transaccion_id: d.id_transaccion, afiliado_id: d.id_afiliado };
 }
 
-// Dispute support: every documento-legal signed by one affiliate,
-// searched by `documento` (cédula) — `nombres` is only an extra
-// confirmation the backend echoes back as `nombre_coincide`, never a
-// second filter (see app/routers/documentos.py).
-export function buscarDocumentosLegales({ documento, nombres }) {
-  const params = new URLSearchParams({ documento });
-  if (nombres && nombres.trim()) params.set("nombres", nombres.trim());
-  return apiClient.get(`/api/documentos/legales/buscar?${params.toString()}`, { tokenAudience: "admin" });
+export async function misDocumentos({ page = 1, pageSize = 20 } = {}) {
+  const rows = await apiClient.get("/portal/documentos", { tokenAudience: "afiliado" });
+  return paginar(rows.map(normalizarDocumento), page, pageSize);
 }
 
-export function descargarDocumento(id) {
-  return apiClient.getBlob(`/api/documentos/${id}/descarga`, { tokenAudience: "admin" });
+export async function descargarMiDocumento(id) {
+  const docs = await apiClient.get("/portal/documentos", { tokenAudience: "afiliado" });
+  const doc = docs.map(normalizarDocumento).find((d) => String(d.id) === String(id));
+  if (!doc) throw new Error("Documento no encontrado.");
+  return documentoBlob(doc);
+}
+
+export async function listarDocumentos({ page = 1, pageSize = 20 } = {}) {
+  const rows = await apiClient.get("/documentos-asuncion-deuda", { tokenAudience: "admin" });
+  return paginar(rows.map(normalizarDocumento), page, pageSize);
+}
+
+export async function buscarDocumentosLegales({ documento, nombres }) {
+  const [afiliados, documentos] = await Promise.all([
+    apiClient.get("/afiliados", { tokenAudience: "admin" }),
+    apiClient.get("/documentos-asuncion-deuda", { tokenAudience: "admin" }),
+  ]);
+  const afiliado = afiliados.find((a) => String(a.documento).trim() === String(documento).trim());
+  if (!afiliado) return { afiliado: null, documentos: [] };
+  const nombreCompleto = `${afiliado.nombres} ${afiliado.apellidos}`.toLowerCase();
+  const nombreBuscado = String(nombres || "").trim().toLowerCase();
+  const docs = documentos
+    .filter((d) => d.id_afiliado === afiliado.id)
+    .map((d) => ({ ...normalizarDocumento(d), convenio_nombre: d.convenio_nombre ?? `Producto ${d.id_producto}` }));
+  return {
+    afiliado: { ...afiliado, nombre_coincide: !nombreBuscado || nombreCompleto.includes(nombreBuscado) },
+    documentos: docs,
+  };
+}
+
+export async function descargarDocumento(id) {
+  const doc = await apiClient.get(`/documentos-asuncion-deuda/${id}/descargar`, { tokenAudience: "admin" });
+  return documentoBlob(normalizarDocumento(doc));
 }

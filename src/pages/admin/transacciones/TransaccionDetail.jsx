@@ -6,14 +6,17 @@ import { StatusBadge } from '../../../components/ui/Badge';
 import Avatar from '../../../components/ui/Avatar';
 import Button from '../../../components/ui/Button';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
-import { IconFirma } from '../../../components/ui/Icons';
 import * as transaccionesService from '../../../services/transaccionesService';
 import * as afiliadosService from '../../../services/afiliadosService';
 import * as convenioService from '../../../services/convenioService';
-import * as documentosService from '../../../services/documentosService';
 import { formatCOP, formatDateTime, cuotasLabel } from '../../../utils/format';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
+// ADAPTADO AL BACKEND REAL: `transacciones` no tiene un `codigos[]` embebido
+// (esos códigos ahora viven en `tickets`, sin un endpoint admin para
+// consultar los tickets de un afiliado ajeno) ni una fila de documento de
+// asunción de deuda (no existe esa tabla). Ambas secciones quedan
+// documentadas como pendientes en vez de mostrarse con datos inventados.
 export default function TransaccionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -21,8 +24,8 @@ export default function TransaccionDetail() {
 
   const [trx, setTrx] = useState(null);
   const [afiliado, setAfiliado] = useState(null);
+  const [producto, setProducto] = useState(null);
   const [convenio, setConvenio] = useState(null);
-  const [documento, setDocumento] = useState(null); // null = none for this transaction (real, not an error)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -39,30 +42,11 @@ export default function TransaccionDetail() {
       .then((t) => {
         setTrx(t);
         afiliadosService.obtenerAfiliado(t.afiliado_id).then(setAfiliado).catch(() => setAfiliado(null));
-        // `obtenerConvenio` takes a cooperativas_convenios id, not a
-        // producto id — resolve the producto's owning convenio the same
-        // way TransaccionesList does: find which convenio's productos
-        // include this transaction's id_producto.
-        convenioService
-          .listarConvenios({ pageSize: 100 })
-          .then((data) =>
-            Promise.all(
-              data.items.map((c) =>
-                convenioService
-                  .listarProductosDeConvenio(c.id_convenio)
-                  .then((productos) => (productos.some((p) => p.id === t.id_producto) ? { ...c, producto: productos.find((p) => p.id === t.id_producto) } : null))
-                  .catch(() => null)
-              )
-            )
-          )
-          .then((matches) => setConvenio(matches.find(Boolean) ?? null))
-          .catch(() => setConvenio(null));
-        if (t.metodo_pago === 'CUPO') {
-          documentosService
-            .listarDocumentos({ pageSize: 100 })
-            .then((data) => setDocumento(data.items.find((d) => d.transaccion_id === t.id) ?? null))
-            .catch(() => setDocumento(null));
-        }
+        convenioService.listarProductos({}).then((productos) => {
+          const p = productos.find((pr) => pr.id === t.id_producto) ?? null;
+          setProducto(p);
+          if (p) convenioService.obtenerConvenio(p.id_convenio).then(setConvenio).catch(() => setConvenio(null));
+        });
       })
       .catch((err) => setError(err.status === 404 ? null : err.message))
       .finally(() => setLoading(false));
@@ -77,13 +61,14 @@ export default function TransaccionDetail() {
   }
 
   const nombreAfiliado = afiliado ? `${afiliado.nombres} ${afiliado.apellidos}` : '—';
+  const nombreConvenioProducto = convenio && producto ? `${convenio.nombre} · ${producto.nombre}` : 'Convenio';
 
   return (
     <div>
       <div className="page-header">
         <div>
           <span className="text-label text-mono">TRX-{trx.id}</span>
-          <h1 className="text-h1 page-title">{convenio ? `${convenio.nombre} · ${convenio.producto.nombre}` : 'Convenio'}</h1>
+          <h1 className="text-h1 page-title">{nombreConvenioProducto}</h1>
           <p className="page-subtitle">{formatDateTime(trx.created_at)}</p>
         </div>
         <div className="page-header-actions">
@@ -95,28 +80,23 @@ export default function TransaccionDetail() {
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 14 }}>Detalle de la compra</div>
           <div className="grid grid-3">
-            <Detail label="Convenio" value={convenio ? `${convenio.nombre} · ${convenio.producto.nombre}` : undefined} />
+            <Detail label="Convenio" value={convenio && producto ? nombreConvenioProducto : undefined} />
             <Detail label="Unidades" value={trx.cantidad} />
             <Detail label="Subtotal" value={formatCOP(trx.subtotal)} />
             <Detail label="Total" value={formatCOP(trx.total)} />
-            <Detail label="Forma de pago" value={trx.metodo_pago === 'TARJETA' ? 'Tarjeta débito/crédito' : 'Cupo de la entidad'} />
+            <Detail label="Forma de pago" value={trx.metodo_pago === 'CUPO' ? 'Cupo de la entidad' : trx.metodo_pago} />
             {trx.metodo_pago === 'CUPO' && <Detail label="Cuotas" value={trx.numero_cuotas} />}
             {trx.referencia_pago && <Detail label="Referencia de pago" value={trx.referencia_pago} />}
             <Detail label="Fecha y hora" value={formatDateTime(trx.created_at)} />
           </div>
 
-          {trx.codigos.length > 0 && (
-            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border-default)' }}>
-              <div className="text-label" style={{ marginBottom: 10 }}>Unidades asignadas</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {trx.codigos.map((c) => (
-                  <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 8, padding: '10px 12px' }}>
-                    <span className="text-mono" style={{ flex: 1 }}>{c}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border-default)' }}>
+            <div className="text-label" style={{ marginBottom: 10 }}>Unidades asignadas (tickets)</div>
+            <p className="text-small cell-muted" style={{ marginTop: 0 }}>
+              El backend actual no expone un endpoint para que un administrador consulte los tickets de un afiliado ajeno —
+              solo el propio afiliado puede verlos desde su portal (GET /tickets/me).
+            </p>
+          </div>
         </Card>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -133,27 +113,6 @@ export default function TransaccionDetail() {
               <Button size="sm" variant="ghost" style={{ marginTop: 12 }} onClick={() => navigate(`${base}/afiliados/${afiliado.id}`)}>Ver perfil completo</Button>
             )}
           </Card>
-
-          {documento && (
-            <Card padding="card-pad-lg">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <span style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg-brand-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <IconFirma color="var(--brand-primary)" size={18} />
-                </span>
-                <div className="text-label" style={{ marginBottom: 0 }}>Documento de asunción de deuda</div>
-              </div>
-              <div style={{ marginBottom: 8 }}><StatusBadge status={documento.estado} /></div>
-              <p className="text-small" style={{ marginTop: 0 }}>
-                {documento.fecha_firma
-                  ? `Firmado el ${formatDateTime(documento.fecha_firma)}.`
-                  : `Generado el ${formatDateTime(documento.fecha_generacion)}, aún sin firmar.`}
-                {' '}Autoriza {cuotasLabel(trx.numero_cuotas)} sobre el cupo de la entidad.
-              </p>
-              <p className="text-caption cell-muted" style={{ marginTop: 0 }}>
-                La descarga del documento (Firebase Storage) no está conectada en esta integración.
-              </p>
-            </Card>
-          )}
         </div>
       </div>
     </div>

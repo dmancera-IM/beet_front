@@ -1,55 +1,65 @@
-import { apiClient } from './apiClient';
+import { apiClient, ApiError } from "./apiClient";
 
-// The 4 fixed, code-owned ticket designs — clave/nombre only, never any
-// HTML/CSS. Pure code on the backend (no database row involved at all).
+function blobDePlantilla(data) {
+  return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+}
+
 export function listarCatalogoPlantillas() {
-  return apiClient.get('/api/plantillas/catalogo', { tokenAudience: 'admin' });
+  // El backend real maneja una plantilla PDF por convenio, no un catálogo fijo
+  // de diseños. Se conserva la API para no romper modales antiguos.
+  return Promise.resolve([]);
 }
 
-// A real PDF of the design (same rendering path a real ticket uses,
-// with safe fixture data) — lets an admin preview each design.
 export function previsualizarCatalogoPlantilla(clave) {
-  return apiClient.getBlob(`/api/plantillas/catalogo/${clave}/preview`, { tokenAudience: 'admin' });
+  return Promise.resolve(blobDePlantilla({ tipo: "catalogo", clave }));
 }
 
-// The unified "Seleccionar plantilla" list for one convenio: the 4
-// catalog designs PLUS every real per-convenio plantilla ever created
-// for it, each carrying `en_uso` — the single item (across both kinds)
-// that would actually be used for a real ticket right now.
-export function listarPlantillasDisponibles(convenioId) {
-  return apiClient.get(`/api/plantillas/disponibles?convenio_id=${convenioId}`, { tokenAudience: 'admin' });
+export async function listarPlantillasDisponibles(convenioId) {
+  const plantilla = await apiClient.get(`/convenios/${convenioId}/plantilla-pdf`, { tokenAudience: "admin" });
+  if (!plantilla) return [];
+  return [{
+    tipo: "personalizada",
+    id: convenioId,
+    nombre: plantilla.nombre,
+    version: 1,
+    en_uso: plantilla.estado === "ACTIVA",
+    archivo_url: plantilla.archivo_url,
+  }];
 }
 
-// Real per-convenio plantillas created from pasted HTML/Jinja2 source —
-// no visual editor, no manual positioning (see
-// backend/app/services/template_engine.py's `validar_y_renderizar`,
-// shared by both endpoints below so a preview can never look different
-// from what actually gets saved). `formData` fields: convenio_id
-// (required), html (required), nombre (optional).
 export function previsualizarPlantillaHtml(formData) {
-  return apiClient.postFormBlob('/api/plantillas/preview', formData, { tokenAudience: 'admin' });
+  const convenioId = formData.get("convenio_id");
+  const nombre = formData.get("nombre") || "Plantilla HTML";
+  const html = formData.get("html") || "";
+  return Promise.resolve(blobDePlantilla({ convenio_id: convenioId, nombre, html }));
 }
 
-export function crearPlantillaHtml(formData) {
-  return apiClient.postForm('/api/plantillas', formData, { tokenAudience: 'admin' });
+export async function crearPlantillaHtml(formData) {
+  const convenioId = formData.get("convenio_id");
+  if (!convenioId) throw new ApiError("Falta convenio_id.", 422, null);
+  const nombre = formData.get("nombre") || "Plantilla personalizada";
+  const html = formData.get("html") || "";
+  const plantilla = await apiClient.patch(
+    `/convenios/${convenioId}/plantilla-pdf`,
+    { nombre, archivo_url: `data:text/html;charset=utf-8,${encodeURIComponent(html)}`, estado: "ACTIVA" },
+    { tokenAudience: "admin" }
+  );
+  return { ...plantilla, version: 1 };
 }
 
-// A real PDF preview (fixture data) of a plantilla that already exists
-// — used by "Ver muestra" on a personalizada item in the unified list.
-export function previsualizarPlantillaPorId(plantillaId) {
-  return apiClient.getBlob(`/api/plantillas/${plantillaId}/preview`, { tokenAudience: 'admin' });
+export async function previsualizarPlantillaPorId(convenioId) {
+  const plantilla = await apiClient.get(`/convenios/${convenioId}/plantilla-pdf/descargar`, { tokenAudience: "admin" });
+  return blobDePlantilla(plantilla);
 }
 
-// Activate (`estado: true` — becomes THE plantilla in effect, clearing
-// any catalog selection and deactivating every sibling) or deactivate
-// (`estado: false`, "Dejar de usar") a real per-convenio plantilla.
-export function actualizarEstadoPlantilla(plantillaId, estado) {
-  return apiClient.patch(`/api/plantillas/${plantillaId}`, { estado }, { tokenAudience: 'admin' });
+export function actualizarEstadoPlantilla(convenioId, estado) {
+  return apiClient.patch(
+    `/convenios/${convenioId}/plantilla-pdf`,
+    { estado: estado ? "ACTIVA" : "INACTIVA" },
+    { tokenAudience: "admin" }
+  );
 }
 
-// Permanently removes a real per-convenio plantilla (never a catalog
-// design — those aren't rows and have no id). The row simply stops
-// appearing in `listarPlantillasDisponibles`.
-export function eliminarPlantilla(plantillaId) {
-  return apiClient.delete(`/api/plantillas/${plantillaId}`, { tokenAudience: 'admin' });
+export function eliminarPlantilla(convenioId) {
+  return actualizarEstadoPlantilla(convenioId, false);
 }

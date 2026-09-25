@@ -1,23 +1,47 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card, KpiCard } from '../../../components/ui/Card';
-import { StatusBadge } from '../../../components/ui/Badge';
+import { ErrorState, LoadingState } from '../../../components/ui/States';
 import { IconWarningTriangle } from '../../../components/ui/Icons';
-import { formatCOP, formatDate } from '../../../utils/format';
 import GesNav from './GesNav';
-import { getCooperativas, getDineroGanadoPorVentas, getInventarioCentral, getSolicitudes } from './gesData';
+import * as adminService from '../../../services/adminService';
+import * as convenioService from '../../../services/convenioService';
+import * as storageService from '../../../services/storageService';
+import * as solicitudesService from '../../../services/solicitudesService';
 
+// ADAPTADO AL BACKEND REAL: reemplaza gesData.js — cada número viene de un
+// endpoint real (cooperativas, convenios, storage, solicitudes-compra). No
+// hay un "dinero ganado por ventas" agregado en el backend actual (no
+// existe una tabla de movimientos/ledger) — ese KPI se retiró en vez de
+// inventarlo.
 export default function GesDashboard() {
   useSetBreadcrumbs([{ label: 'GES' }]);
 
-  const cooperativas = getCooperativas();
-  const inventario = getInventarioCentral();
-  const solicitudes = getSolicitudes();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const cooperativasActivas = cooperativas.filter((c) => c.estado === 'Activa').length;
-  const bonosEnStorage = inventario.reduce((sum, i) => sum + i.disponible, 0);
-  const pendientes = solicitudes.filter((s) => s.estado === 'Pendiente');
-  const dineroGanado = getDineroGanadoPorVentas();
+  const cargar = () => {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      adminService.listarCooperativas(),
+      convenioService.listarConvenios(),
+      storageService.listarStorage({ estado: 'DISPONIBLE' }),
+      solicitudesService.listarSolicitudes({ estado: 'PENDIENTE' }),
+    ])
+      .then(([cooperativas, convenios, storageDisponible, pendientes]) => setData({ cooperativas, convenios, storageDisponible, pendientes }))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(cargar, []);
+
+  if (loading) return <LoadingState title="Cargando estadísticas desde PostgreSQL…" />;
+  if (error) return <ErrorState description={error} onRetry={cargar} />;
+
+  const cooperativasActivas = data.cooperativas.filter((c) => c.estado).length;
 
   return (
     <div>
@@ -25,81 +49,43 @@ export default function GesDashboard() {
         <div>
           <span className="text-label">Panel GES</span>
           <h1 className="text-h1 page-title">GES</h1>
-          <p className="page-subtitle">
-            Storage y entidades: proveedor → GES → Storage → entidad → afiliados.
-          </p>
+          <p className="page-subtitle">Storage y entidades: proveedor → GES → Storage → entidad → afiliados.</p>
         </div>
       </div>
 
       <GesNav />
 
       <div className="grid grid-kpi section-gap">
-        <KpiCard label="Bonos/boletas en Storage" value={bonosEnStorage.toLocaleString('es-CO')} delta="Disponibles para asignar" deltaTone="neutral" />
+        <KpiCard label="Códigos disponibles en Storage" value={data.storageDisponible.length.toLocaleString('es-CO')} delta="Listos para asignar" deltaTone="neutral" />
         <KpiCard
-          label="Solicitudes"
-          value={pendientes.length}
-          delta={pendientes.length > 0 ? 'Pendientes de revisión' : 'Sin solicitudes pendientes'}
-          deltaTone={pendientes.length > 0 ? 'warning' : 'neutral'}
-          icon={pendientes.length > 0 ? <IconWarningTriangle size={14} color="var(--warning)" /> : undefined}
+          label="Solicitudes pendientes"
+          value={data.pendientes.length}
+          delta={data.pendientes.length > 0 ? 'Requieren más storage' : 'Sin solicitudes pendientes'}
+          deltaTone={data.pendientes.length > 0 ? 'warning' : 'neutral'}
+          icon={data.pendientes.length > 0 ? <IconWarningTriangle size={14} color="var(--warning)" /> : undefined}
         />
-        <KpiCard label="Entidades activas" value={cooperativasActivas} delta={`${cooperativas.length} en total`} deltaTone="neutral" />
-        <KpiCard label="Dinero ganado por ventas" value={formatCOP(dineroGanado)} delta="Ventas de bonos/boletas a entidades" deltaTone="neutral" />
+        <KpiCard label="Entidades activas" value={cooperativasActivas} delta={`${data.cooperativas.length} en total`} deltaTone="neutral" />
+        <KpiCard label="Convenios en catálogo" value={data.convenios.length} delta={`${data.convenios.filter((c) => c.estado).length} activos`} deltaTone="neutral" />
       </div>
 
-      <div className="grid detail-grid-2col" style={{ '--col-ratio': '1.3fr 1fr', gap: 16 }}>
-        <Card padding="card-pad">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-            <span className="text-label" style={{ marginBottom: 0 }}>Storage por producto</span>
-            <Link to="/ges/storage" className="text-small" style={{ fontWeight: 600 }}>Ver Storage</Link>
+      <Card padding="card-pad">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+          <span className="text-label" style={{ marginBottom: 0 }}>Solicitudes pendientes</span>
+          <Link to="/ges/transacciones" className="text-small" style={{ fontWeight: 600 }}>Ver todas</Link>
+        </div>
+        {data.pendientes.length === 0 ? (
+          <div className="text-small cell-muted">Sin solicitudes pendientes.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {data.pendientes.slice(0, 5).map((s) => (
+              <div key={s.id} className="text-small" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Entidad #{s.id_cooperativa} · Producto #{s.id_producto}</span>
+                <span className="tabular">{s.cantidad} unidades</span>
+              </div>
+            ))}
           </div>
-          <div className="table-scroll">
-            <table className="data-table" style={{ minWidth: 0 }}>
-              <thead>
-                <tr>
-                  <th>Convenio</th>
-                  <th>Producto</th>
-                  <th className="right">Disponible</th>
-                  <th className="right">Vendidas</th>
-                  <th className="right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventario.map((i) => (
-                  <tr key={i.productoId}>
-                    <td className="cell-primary">{i.proveedor}</td>
-                    <td>{i.producto}</td>
-                    <td className="right tabular">{i.disponible.toLocaleString('es-CO')}</td>
-                    <td className="right tabular">{i.asignado.toLocaleString('es-CO')}</td>
-                    <td className="right tabular">{i.total.toLocaleString('es-CO')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card padding="card-pad">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-            <span className="text-label" style={{ marginBottom: 0 }}>Transacciones pendientes</span>
-            <Link to="/ges/transacciones" className="text-small" style={{ fontWeight: 600 }}>Ver todas</Link>
-          </div>
-          {pendientes.length === 0 ? (
-            <div className="text-small cell-muted">Sin solicitudes pendientes.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {pendientes.slice(0, 5).map((s) => (
-                <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{s.cooperativaNombre}</div>
-                    <div className="text-caption">{s.proveedorNombre} · {s.productoNombre} · {s.cantidad.toLocaleString('es-CO')} unidades · {formatDate(s.fecha)}</div>
-                  </div>
-                  <StatusBadge status={s.estado} />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+        )}
+      </Card>
     </div>
   );
 }

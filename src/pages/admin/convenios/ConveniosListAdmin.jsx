@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import Button from '../../../components/ui/Button';
 import { Checkbox, Input, Select, Switch } from '../../../components/ui/Field';
-import { IconBuscar, IconDescargar, IconPlus } from '../../../components/ui/Icons';
+import { IconBuscar, IconPlus } from '../../../components/ui/Icons';
 import { Pagination } from '../../../components/ui/Nav';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
 import PermissionGate from '../../../components/ui/PermissionGate';
@@ -15,18 +15,10 @@ import { ApiError } from '../../../services/apiClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
 
-// Porcentajes de ganancia permitidos para un convenio: de 5% en 5% hasta 50%.
 const PORCENTAJES_GANANCIA = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 
-// Vista de Convenios para ADMIN (sección 10 de la definición funcional):
-// GES mantiene el catálogo maestro (convenio → productos); ADMIN solo
-// elige qué convenios usa su cooperativa (switch activar/desactivar) y ve
-// el inventario que ya adquirió, agregado por convenio. El precio ya NO se
-// configura aquí (ver REGLA CRÍTICA, sección 11) — eso se hace por
-// producto, dentro del detalle de cada convenio.
 export default function ConveniosListAdmin() {
   useSetBreadcrumbs([{ label: 'Convenios' }]);
-  const navigate = useNavigate();
   const { push } = useToast();
   const base = useAreaBase();
 
@@ -34,25 +26,24 @@ export default function ConveniosListAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [inventarioPorConvenio, setInventarioPorConvenio] = useState({});
-  const [exporting, setExporting] = useState(false);
 
   const [catalogoOpen, setCatalogoOpen] = useState(false);
   const [seleccionCatalogo, setSeleccionCatalogo] = useState({});
   const [guardandoCatalogo, setGuardandoCatalogo] = useState(false);
-  const [catalogoMaestro, setCatalogoMaestro] = useState([]);
+  const [catalogoDisponible, setCatalogoDisponible] = useState([]);
   const [cargandoCatalogoMaestro, setCargandoCatalogoMaestro] = useState(false);
+  const [guardandoGanancia, setGuardandoGanancia] = useState(null);
+  const [guardandoEstado, setGuardandoEstado] = useState(null);
 
   const cargar = useCallback(() => {
     setLoading(true);
     setError(null);
     convenioService
-      .listarConvenios({ pageSize: 100 })
+      .listarConveniosCooperativa()
       .then((data) => {
-        setConvenios(data.items);
-        // El inventario se muestra agregado por convenio (sección 10.2):
-        // suma de "disponible" de todos los productos de ese convenio.
+        setConvenios(data);
         Promise.all(
-          data.items.map((c) =>
+          data.map((c) =>
             convenioService
               .listarProductosDeConvenio(c.id_convenio)
               .then((productos) =>
@@ -75,42 +66,16 @@ export default function ConveniosListAdmin() {
 
   const { search, setSearch, filters, setFilter, pageRows, page, setPage, totalPages, total } = useTableState({
     data: convenios,
-    searchFields: ['nombre', 'id'],
+    searchFields: ['nombre', 'id_convenio'],
     pageSize: 10,
   });
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const { blob, filename } = await convenioService.exportarConvenios();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      push({ title: 'Convenios exportados', description: filename });
-    } catch (err) {
-      push({ title: 'No se pudo exportar', description: err.message, variant: 'error' });
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // Ganancia de la entidad para TODO el convenio (sección 1 de "Ganancia
-  // por convenio y precios por producto"): únicos valores permitidos
-  // 5/10/15, nunca por producto — todos los productos del convenio la
-  // heredan automáticamente (ver services/mockDb.js `precioBeetDe`).
-  const [guardandoGanancia, setGuardandoGanancia] = useState(null);
 
   const cambiarGanancia = async (convenio, porcentaje) => {
     setGuardandoGanancia(convenio.id);
     try {
-      const actualizado = await convenioService.actualizarConvenio(convenio.id, { porcentaje_ganancia_entidad: Number(porcentaje) });
-      setConvenios((prev) => prev.map((c) => (c.id === convenio.id ? actualizado : c)));
+      await convenioService.actualizarConvenioCooperativa(convenio.id_convenio, { porcentaje_ganancia_entidad: Number(porcentaje) });
       push({ title: 'Ganancia actualizada', description: `${convenio.nombre}: ${porcentaje}% — todos sus productos la heredan.` });
+      cargar();
     } catch (err) {
       push({ title: 'No se pudo actualizar la ganancia', description: err.message, variant: 'error' });
     } finally {
@@ -121,31 +86,28 @@ export default function ConveniosListAdmin() {
   const toggleEstado = async (convenio) => {
     const nuevoEstado = !convenio.estado;
     if (nuevoEstado && !convenio.puede_activarse) {
-      push({ title: 'Configura el porcentaje de ganancia primero', description: `${convenio.nombre}: entra al detalle y configura al menos un producto antes de activarlo.`, variant: 'error' });
+      push({ title: 'Faltan datos para activar', description: 'Configura el porcentaje y al menos un producto activo con precio público.', variant: 'error' });
       return;
     }
+    setGuardandoEstado(convenio.id);
     try {
-      const actualizado = await convenioService.actualizarConvenio(convenio.id, { estado: nuevoEstado });
-      setConvenios((prev) => prev.map((c) => (c.id === convenio.id ? actualizado : c)));
+      await convenioService.cambiarEstadoConvenioCooperativa(convenio.id_convenio, nuevoEstado);
       push({ title: nuevoEstado ? 'Convenio activado' : 'Convenio desactivado', description: convenio.nombre });
+      cargar();
     } catch (err) {
       push({ title: 'No se pudo actualizar el convenio', description: err.message, variant: 'error' });
+    } finally {
+      setGuardandoEstado(null);
     }
   };
-
-  // Catálogo maestro de convenios creado por GES — la cooperativa solo
-  // puede elegir de esta lista, nunca escribir un nombre nuevo (sección 11:
-  // ADMIN no modifica el catálogo maestro de GES).
-  const idsYaAgregados = new Set(convenios.map((c) => c.id_convenio));
-  const catalogoDisponible = catalogoMaestro.filter((p) => !idsYaAgregados.has(p.id));
 
   const abrirCatalogo = () => {
     setSeleccionCatalogo({});
     setCatalogoOpen(true);
     setCargandoCatalogoMaestro(true);
     convenioService
-      .listarCatalogoMaestroConvenios()
-      .then(setCatalogoMaestro)
+      .listarConveniosDisponiblesCooperativa()
+      .then(setCatalogoDisponible)
       .catch((err) => push({ title: 'No se pudo cargar el catálogo maestro', description: err.message, variant: 'error' }))
       .finally(() => setCargandoCatalogoMaestro(false));
   };
@@ -155,12 +117,10 @@ export default function ConveniosListAdmin() {
     if (seleccionados.length === 0) return;
     setGuardandoCatalogo(true);
     try {
-      await Promise.all(
-        seleccionados.map((p) => convenioService.crearConvenio({ id_convenio: p.id, nombre: p.nombre }))
-      );
+      await Promise.all(seleccionados.map((p) => convenioService.agregarConvenioCooperativa(p.id)));
       push({
-        title: seleccionados.length === 1 ? 'Convenio agregado (desactivado)' : 'Convenios agregados (desactivados)',
-        description: `${seleccionados.map((p) => p.nombre).join(', ')} — configura el porcentaje de ganancia de al menos un producto para poder activarlo.`,
+        title: seleccionados.length === 1 ? 'Convenio agregado' : 'Convenios agregados',
+        description: 'Quedan desactivados hasta configurar ganancia y productos.',
       });
       setCatalogoOpen(false);
       cargar();
@@ -176,7 +136,7 @@ export default function ConveniosListAdmin() {
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Convenios</h1>
-          <p className="page-subtitle">Convenios que tu entidad activó desde el catálogo maestro de GES, con su inventario disponible.</p>
+          <p className="page-subtitle">Convenios que tu entidad agregó desde el catálogo maestro de GES.</p>
         </div>
         <div className="page-header-actions">
           <PermissionGate>
@@ -209,11 +169,7 @@ export default function ConveniosListAdmin() {
         ) : error ? (
           <ErrorState description={error} onRetry={cargar} />
         ) : pageRows.length === 0 ? (
-          total === 0 ? (
-            <EmptyState title="No hay convenios activados" description="Agrega el primer convenio desde el catálogo maestro de GES." />
-          ) : (
-            <EmptyState title="Sin convenios que coincidan" description="Ajusta los filtros o el término de búsqueda." />
-          )
+          total === 0 ? <EmptyState title="No hay convenios agregados" description="Agrega el primer convenio desde el catálogo maestro de GES." /> : <EmptyState title="Sin convenios que coincidan" description="Ajusta los filtros o el término de búsqueda." />
         ) : (
           <div className="table-scroll">
             <table className="data-table">
@@ -232,7 +188,7 @@ export default function ConveniosListAdmin() {
                   return (
                     <tr key={c.id}>
                       <td>
-                        <Link to={`${base}/convenios/${c.id}`} className="cell-primary" style={{ color: 'var(--text-primary)', textDecoration: 'none' }}>{c.nombre}</Link>
+                        <Link to={`${base}/convenios/${c.id_convenio}`} className="cell-primary" style={{ color: 'var(--text-primary)', textDecoration: 'none' }}>{c.nombre}</Link>
                       </td>
                       <td className="right tabular">{disponible == null ? '—' : `${disponible} unidades`}</td>
                       <td>
@@ -244,9 +200,7 @@ export default function ConveniosListAdmin() {
                             onChange={(e) => cambiarGanancia(c, e.target.value)}
                           >
                             <option value="" disabled>Elegir</option>
-                            {PORCENTAJES_GANANCIA.map((p) => (
-                              <option key={p} value={p}>{p}%</option>
-                            ))}
+                            {PORCENTAJES_GANANCIA.map((p) => <option key={p} value={p}>{p}%</option>)}
                           </Select>
                         </PermissionGate>
                       </td>
@@ -256,13 +210,13 @@ export default function ConveniosListAdmin() {
                             label={c.estado ? 'Activo' : 'Inactivo'}
                             checked={c.estado}
                             onChange={() => toggleEstado(c)}
-                            disabled={!c.estado && !c.puede_activarse}
-                            title={!c.estado && !c.puede_activarse ? 'Configura el porcentaje de ganancia de un producto antes de activar' : undefined}
+                            disabled={guardandoEstado === c.id || (!c.estado && !c.puede_activarse)}
+                            title={!c.estado && !c.puede_activarse ? 'Configura porcentaje y al menos un producto antes de activar' : undefined}
                           />
                         </PermissionGate>
                       </td>
                       <td className="right">
-                        <Link to={`${base}/convenios/${c.id}`} style={{ fontSize: 13, fontWeight: 600 }}>
+                        <Link to={`${base}/convenios/${c.id_convenio}`} style={{ fontSize: 13, fontWeight: 600 }}>
                           {!c.estado && !c.puede_activarse ? 'Configurar' : 'Ver detalle'}
                         </Link>
                       </td>
@@ -274,9 +228,7 @@ export default function ConveniosListAdmin() {
           </div>
         )}
 
-        {!loading && !error && (
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${total} convenios`} />
-        )}
+        {!loading && !error && <Pagination page={page} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${total} convenios`} />}
       </div>
 
       <Modal
@@ -291,21 +243,16 @@ export default function ConveniosListAdmin() {
         }
       >
         <p className="text-caption cell-muted" style={{ marginTop: 0 }}>
-          Selecciona uno o varios convenios del catálogo maestro de GES. El precio para tus afiliados se configura después, producto por producto, desde el detalle del convenio.
+          Selecciona uno o varios convenios del catálogo maestro de GES. Luego configura ganancia y productos.
         </p>
         {cargandoCatalogoMaestro ? (
           <LoadingState title="Cargando catálogo maestro…" />
         ) : catalogoDisponible.length === 0 ? (
-          <EmptyState title="Ya agregaste todos los convenios disponibles" description="GES todavía no ha publicado más convenios en el catálogo maestro." />
+          <EmptyState title="Ya agregaste todos los convenios disponibles" description="GES todavía no ha publicado más convenios activos." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {catalogoDisponible.map((p) => (
-              <Checkbox
-                key={p.id}
-                label={p.nombre}
-                checked={!!seleccionCatalogo[p.id]}
-                onChange={(e) => setSeleccionCatalogo((s) => ({ ...s, [p.id]: e.target.checked }))}
-              />
+              <Checkbox key={p.id} label={p.nombre} checked={!!seleccionCatalogo[p.id]} onChange={(e) => setSeleccionCatalogo((s) => ({ ...s, [p.id]: e.target.checked }))} />
             ))}
           </div>
         )}

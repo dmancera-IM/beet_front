@@ -1,41 +1,43 @@
+import { useEffect, useState } from 'react';
 import { useSetBreadcrumbs } from '../../components/layout/breadcrumbs';
 import { Card } from '../../components/ui/Card';
+import { ErrorState, LoadingState } from '../../components/ui/States';
 import { formatCOP } from '../../utils/format';
 import { useAuth } from '../../context/AuthContext';
-import { bolsaDisponible, creditoDisponible, getCooperativa } from './ges/gesData';
+import * as adminService from '../../services/adminService';
 import ComprarBonosGes from './ComprarBonosGes';
 import B2BForm from './b2b/B2BForm';
 
-// Fusión visual de las dos vistas que antes vivían por separado en el
-// sidebar de ADMIN ("GES" y "B2B") — se mantiene el contenido completo de
-// ambos formularios de compra (ComprarBonosGes y B2BForm) debajo de esta
-// sección, que es puramente informativa.
-//
-// Bolsa y Crédito son dos conceptos independientes — NUNCA se muestran
-// mezclados en un único bloque (ronda "Organización visual"):
-//   BOLSA:   un monto que la entidad ya compró y va consumiendo
-//            (`bolsaDisponible()`, nunca restado a mano).
-//   CRÉDITO: un LÍMITE que GES autoriza (credito.cupoAutorizado, ver
-//            GES → Entidades → detalle), del cual la entidad ya usó una
-//            parte (`creditoDisponible()`).
-// Esta sección solo muestra el estado de cada uno en dos Card
-// independientes — la compra real (elegir convenio/producto/cantidad y
-// con cuál de los dos pagar) se hace más abajo, en "Comprar bonos y
-// boletas a GES" y en "B2B", que son los únicos formularios que de verdad
-// mueven estos saldos.
 export default function BolsaCredito() {
   useSetBreadcrumbs([{ label: 'Bolsa / Crédito' }]);
   const { cooperativaId } = useAuth();
-  const cooperativa = getCooperativa(cooperativaId);
-  const bolsa = cooperativa?.bolsa ?? { valor: 0, consumido: 0 };
-  const credito = cooperativa?.credito ?? { cupoAutorizado: 0, utilizado: 0 };
+
+  const [bolsa, setBolsa] = useState(null);
+  const [credito, setCredito] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const cargar = () => {
+    if (!cooperativaId) return;
+    setLoading(true);
+    setError(null);
+    Promise.all([adminService.obtenerBolsa(cooperativaId), adminService.obtenerCredito(cooperativaId)])
+      .then(([b, c]) => { setBolsa(b); setCredito(c); })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(cargar, [cooperativaId]);
+
+  if (loading) return <LoadingState title="Cargando bolsa y crédito desde PostgreSQL…" />;
+  if (error) return <ErrorState description={error} onRetry={cargar} />;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Bolsa / Crédito</h1>
-          <p className="page-subtitle">Estado actual de la bolsa y el crédito de tu entidad. Compra bonos y boletas desde los formularios de abajo.</p>
+          <p className="page-subtitle">Estado actual de la bolsa y el crédito de tu entidad, desde PostgreSQL.</p>
         </div>
       </div>
 
@@ -44,13 +46,13 @@ export default function BolsaCredito() {
           <div className="text-label" style={{ marginBottom: 12 }}>Bolsa</div>
           <Row label="Valor de la bolsa" value={formatCOP(bolsa.valor)} />
           <Row label="Consumido" value={formatCOP(bolsa.consumido)} />
-          <Row label="Disponible" value={formatCOP(bolsaDisponible(bolsa))} />
+          <Row label="Disponible" value={formatCOP(bolsa.valor - bolsa.consumido)} />
         </Card>
         <Card padding="card-pad-lg">
           <div className="text-label" style={{ marginBottom: 12 }}>Crédito</div>
-          <Row label="Cupo aprobado" value={formatCOP(credito.cupoAutorizado)} />
+          <Row label="Cupo aprobado por GES" value={formatCOP(credito.cupo_autorizado)} />
           <Row label="Utilizado" value={formatCOP(credito.utilizado)} />
-          <Row label="Disponible" value={formatCOP(creditoDisponible(credito))} />
+          <Row label="Disponible" value={formatCOP(credito.cupo_autorizado - credito.utilizado)} />
         </Card>
       </div>
 

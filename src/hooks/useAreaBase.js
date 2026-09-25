@@ -11,5 +11,6 @@ export function useAreaBase() {
   const { role, roles } = useAuth();
   if (role === roles.SUPER_ADMIN) return '/super-admin';
   if (role === roles.LECTOR) return '/lector';
+  if (role === roles.GES) return '/ges';
   return '/admin';
 }

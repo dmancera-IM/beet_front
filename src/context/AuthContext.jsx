@@ -6,14 +6,18 @@ import { ROLES_DISPLAY } from '../utils/roles';
 
 // Real auth: the JWT lives in adminTokenStore (see services/apiClient.js);
 // `role`/`permissions` below are ALWAYS derived from the backend's
-// authenticated response (AdminOut.rol), never from anything editable in
-// the browser. There is no more mock session or mock user list here.
+// authenticated response (UsuarioOut.rol from GET /auth/me), never from
+// anything editable in the browser. There is no mock session here.
+//
+// NOTE on field name: the real backend's UsuarioOut uses `id_cooperativa`
+// (not `cooperativa_id`, which is what the old mock/original design used)
+// — see beet_backend/app/schemas/auth.py. Adapted here to match the real
+// contract.
 
 const ROLES = {
   SUPER_ADMIN: ROLES_DISPLAY.SUPER_ADMIN,
   ADMIN: ROLES_DISPLAY.ADMIN,
   LECTOR: ROLES_DISPLAY.LECTOR,
-  // Solo existe en esta copia de demostración — ver la nota en utils/roles.js.
   GES: ROLES_DISPLAY.GES,
 };
 
@@ -21,10 +25,11 @@ const PERMISSIONS = {
   [ROLES.SUPER_ADMIN]: { write: true, manageUsers: true, manageConfig: true },
   [ROLES.ADMIN]: { write: true, manageUsers: false, manageConfig: true },
   [ROLES.LECTOR]: { write: false, manageUsers: false, manageConfig: false },
-  // GES puede operar su propia área (asignar storage, aprobar transacciones)
-  // pero no administra usuarios ni tiene una "configuración de cooperativa"
-  // — no pertenece a ninguna.
-  [ROLES.GES]: { write: true, manageUsers: false, manageConfig: false },
+  // GES opera su propia área (cooperativas, administradores, convenios,
+  // productos, storage, solicitudes) pero no administra usuarios desde esta
+  // UI de "usuarios" compartida ni tiene una "configuración de cooperativa"
+  // propia — no pertenece a ninguna.
+  [ROLES.GES]: { write: true, manageUsers: true, manageConfig: false },
 };
 
 const AuthContext = createContext(null);
@@ -32,11 +37,21 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   // 'checking' (verifying a stored token on load) | 'authenticated' | 'anonymous'
   const [status, setStatus] = useState('checking');
-  const [adminUser, setAdminUser] = useState(null); // real AdminOut from the backend
+  const [adminUser, setAdminUser] = useState(null); // real UsuarioOut from the backend
   const [nombreEntidad, setNombreEntidad] = useState('');
 
-  const loadCooperativa = useCallback(() => {
-    adminService.obtenerCooperativa().then((c) => setNombreEntidad(c.nombre)).catch(() => {});
+  const loadCooperativa = useCallback((usuario) => {
+    // SUPER_ADMIN/GES no pertenecen a ninguna cooperativa (id_cooperativa
+    // null) — no hay "su" entidad que cargar; el nombre mostrado depende de
+    // la selección de CooperativaContext en esas pantallas.
+    if (!usuario?.id_cooperativa) {
+      setNombreEntidad('');
+      return;
+    }
+    adminService
+      .obtenerCooperativa(usuario.id_cooperativa)
+      .then((c) => setNombreEntidad(c.nombre))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -52,7 +67,7 @@ export function AuthProvider({ children }) {
       .then((usuario) => {
         setAdminUser(usuario);
         setStatus('authenticated');
-        loadCooperativa();
+        loadCooperativa(usuario);
       })
       .catch(() => {
         adminTokenStore.clear();
@@ -65,7 +80,7 @@ export function AuthProvider({ children }) {
       const usuario = await authService.adminLogin(correo, password); // throws ApiError on 401/etc.
       setAdminUser(usuario);
       setStatus('authenticated');
-      loadCooperativa();
+      loadCooperativa(usuario);
       return usuario;
     },
     [loadCooperativa]
@@ -101,10 +116,8 @@ export function AuthProvider({ children }) {
       roles: ROLES,
       permissions: PERMISSIONS[role],
       currentUser: adminUser ? { nombre: adminUser.nombre, correo: adminUser.correo, rol: role } : { nombre: '', correo: '', rol: role },
-      // null para SUPER_ADMIN/GES (no pertenecen a ninguna cooperativa) — ver
-      // secciones 26/27 de la definición funcional. Usado, por ejemplo, por
-      // ComprarBonosGes.jsx para saber a nombre de qué cooperativa solicita.
-      cooperativaId: adminUser?.cooperativa_id ?? null,
+      // null para SUPER_ADMIN/GES (no pertenecen a ninguna cooperativa).
+      cooperativaId: adminUser?.id_cooperativa ?? null,
       nombreEntidad: nombreEntidad || 'tu entidad',
     }),
     [status, adminUser, role, nombreEntidad, login, logout]

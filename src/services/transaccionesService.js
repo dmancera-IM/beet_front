@@ -1,43 +1,51 @@
-import { apiClient } from "./apiClient";
+// Compra real del afiliado (beet_backend/app/routers/transacciones.py).
+//
+import { apiClient, ApiError } from "./apiClient";
 
-// `firma_base64` is required by the backend for metodo_pago === "CUPO"
-// (raw base64, no data-URL prefix) — see backend/README.md.
-// `metodo_pago` must be the uppercase value the backend's CHECK
-// constraint/enum expects ("TARJETA" | "CUPO"), and cuotas travels as
-// `numero_cuotas` (see backend/app/schemas/transaccion.py CompraRequest).
-// `numero_tarjeta` is required for TARJETA — it drives the sandbox
-// gateway's simulated outcome by its last 4 digits (see
-// backend/app/services/payment_gateway.py); never sent for CUPO.
-export function comprar({ producto_id, cantidad, metodo_pago, numero_cuotas, firma_base64, numero_tarjeta }) {
+export function comprar({ producto_id, cantidad, metodo_pago, numero_cuotas, firma_base64, firma_url }) {
+  const metodo = String(metodo_pago).toUpperCase();
   return apiClient.post(
-    "/api/transacciones/comprar",
+    "/transacciones/comprar",
     {
-      producto_id,
+      id_producto: producto_id,
       cantidad,
-      metodo_pago: String(metodo_pago).toUpperCase(),
-      numero_cuotas: numero_cuotas ?? null,
-      firma_base64: firma_base64 ?? null,
-      numero_tarjeta: numero_tarjeta ?? null,
+      metodo_pago: metodo,
+      numero_cuotas: metodo === "CUPO" ? numero_cuotas ?? null : null,
+      firma_url: metodo === "CUPO" ? firma_url ?? firma_base64 ?? null : null,
     },
     { tokenAudience: "afiliado" }
-  );
+  ).then((resultado) => ({
+    ...resultado.transaccion,
+    tickets: resultado.tickets,
+    codigos: resultado.tickets?.map((t) => t.codigo) ?? [],
+  }));
 }
 
-export function misTransacciones({ page = 1, pageSize = 20 } = {}) {
-  const params = new URLSearchParams({ page, page_size: pageSize });
-  return apiClient.get(`/api/transacciones/me?${params.toString()}`, { tokenAudience: "afiliado" });
+export function misTransacciones() {
+  return apiClient.get("/transacciones/me", { tokenAudience: "afiliado" });
 }
 
-export function miTransaccion(id) {
-  return apiClient.get(`/api/transacciones/me/${id}`, { tokenAudience: "afiliado" });
+// No existe GET /transacciones/me/{id} en el backend real — se deriva del
+// listado completo (también real), que ya trae todos los campos.
+export async function miTransaccion(id) {
+  const rows = await misTransacciones();
+  const trx = rows.find((t) => String(t.id) === String(id));
+  if (!trx) throw new ApiError("Transacción no encontrada.", 404, null);
+  return trx;
 }
 
-export function listarTransacciones({ page = 1, pageSize = 20, estado } = {}) {
-  const params = new URLSearchParams({ page, page_size: pageSize });
-  if (estado) params.set("estado", estado);
-  return apiClient.get(`/api/transacciones?${params.toString()}`, { tokenAudience: "admin" });
+export function listarTransacciones({ cooperativaId } = {}) {
+  const params = new URLSearchParams();
+  if (cooperativaId) params.set("cooperativa_id", cooperativaId);
+  const query = params.toString();
+  return apiClient.get(`/transacciones${query ? `?${query}` : ""}`, { tokenAudience: "admin" });
 }
 
-export function obtenerTransaccion(id) {
-  return apiClient.get(`/api/transacciones/${id}`, { tokenAudience: "admin" });
+// No existe GET /transacciones/{id} en el backend real — se deriva del
+// listado completo (también real, ya scoped a la cooperativa por el JWT).
+export async function obtenerTransaccion(id) {
+  const rows = await listarTransacciones();
+  const trx = rows.find((t) => String(t.id) === String(id));
+  if (!trx) throw new ApiError("Transacción no encontrada.", 404, null);
+  return trx;
 }

@@ -59,10 +59,10 @@ export default function AfiliadosListAdmin() {
     setLoading(true);
     setError(null);
     afiliadosService
-      .listarAfiliados({ pageSize: 100 })
-      .then((data) =>
+      .listarAfiliados()
+      .then((afiliados) =>
         Promise.all(
-          data.items.map((a) =>
+          afiliados.map((a) =>
             cuposService
               .obtenerCupo(a.id)
               .then((cupo) => ({ ...a, cupo }))

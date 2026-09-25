@@ -1,22 +1,73 @@
+import { useEffect, useState } from 'react';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card, KpiCard } from '../../../components/ui/Card';
 import { StatusBadge } from '../../../components/ui/Badge';
-import { EmptyState } from '../../../components/ui/States';
+import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
 import { formatCOP } from '../../../utils/format';
-import { getConveniosMasUtilizados, getResumenCooperativas, getResumenGlobal, getVentasPorCooperativa } from './superAdminData';
+import * as adminService from '../../../services/adminService';
+import * as afiliadosService from '../../../services/afiliadosService';
+import * as inventarioService from '../../../services/inventarioService';
+import * as transaccionesService from '../../../services/transaccionesService';
+import * as convenioService from '../../../services/convenioService';
+import * as solicitudesService from '../../../services/solicitudesService';
 
-// Vista panorámica principal de Súper admin (sección 6-11 de la definición
-// funcional): todo BEET desde una sola pantalla, sin necesidad de elegir
-// una cooperativa primero — a diferencia del Dashboard de cooperativa
-// (pages/Dashboard.jsx), que sigue intacto y disponible desde "Dashboard"
-// en el menú para cuando Súper admin quiera entrar al detalle de una sola.
+// ADAPTADO AL BACKEND REAL: reemplaza por completo superAdminData.js (100%
+// mock, leía directamente los arrays en memoria de services/mockDb.js).
+// Cada número aquí sale de un endpoint real — con el costo de una llamada
+// por cooperativa (N+1), aceptable al tamaño de datos de esta integración
+// porque no existe un endpoint agregado global en el backend actual.
 export default function SuperAdminDashboard() {
   useSetBreadcrumbs([{ label: 'Dashboard Súper admin' }]);
 
-  const resumen = getResumenGlobal();
-  const ventasPorCooperativa = getVentasPorCooperativa().sort((a, b) => b.ventas - a.ventas);
-  const conveniosMasUtilizados = getConveniosMasUtilizados();
-  const resumenCooperativas = getResumenCooperativas();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const cargar = () => {
+    setLoading(true);
+    setError(null);
+    adminService
+      .listarCooperativas()
+      .then(async (cooperativas) => {
+        const [convenios, productos, solicitudesPendientes] = await Promise.all([
+          convenioService.listarConvenios(),
+          convenioService.listarProductos({}),
+          solicitudesService.listarSolicitudes({ estado: 'PENDIENTE' }),
+        ]);
+
+        const porCooperativa = await Promise.all(
+          cooperativas.map(async (c) => {
+            const [bolsa, credito, afiliados, inventario, transacciones] = await Promise.all([
+              adminService.obtenerBolsa(c.id).catch(() => null),
+              adminService.obtenerCredito(c.id).catch(() => null),
+              afiliadosService.listarAfiliados({ cooperativaId: c.id }).catch(() => []),
+              inventarioService.listarInventario({ cooperativaId: c.id }).catch(() => []),
+              transaccionesService.listarTransacciones({ cooperativaId: c.id }).catch(() => []),
+            ]);
+            const ventas = transacciones.filter((t) => t.estado === 'COMPLETADA').reduce((s, t) => s + t.total, 0);
+            return { cooperativa: c, bolsa, credito, afiliados, inventario, transacciones, ventas };
+          })
+        );
+
+        setData({ cooperativas, convenios, productos, solicitudesPendientes, porCooperativa });
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(cargar, []);
+
+  if (loading) return <LoadingState title="Cargando panorama desde PostgreSQL…" />;
+  if (error) return <ErrorState description={error} onRetry={cargar} />;
+
+  const { cooperativas, convenios, solicitudesPendientes, porCooperativa } = data;
+  const cooperativasActivas = cooperativas.filter((c) => c.estado).length;
+  const totalAfiliados = porCooperativa.reduce((s, c) => s + c.afiliados.length, 0);
+  const totalTransacciones = porCooperativa.reduce((s, c) => s + c.transacciones.length, 0);
+  const inventarioTotal = porCooperativa.reduce((s, c) => s + c.inventario.length, 0);
+  const inventarioDisponible = porCooperativa.reduce((s, c) => s + c.inventario.filter((u) => u.estado === 'DISPONIBLE').length, 0);
+  const inventarioEntregado = porCooperativa.reduce((s, c) => s + c.inventario.filter((u) => u.estado === 'ENTREGADA').length, 0);
+  const ventasPorCooperativa = [...porCooperativa].sort((a, b) => b.ventas - a.ventas);
   const maxVentas = Math.max(1, ...ventasPorCooperativa.map((c) => c.ventas));
 
   return (
@@ -25,27 +76,27 @@ export default function SuperAdminDashboard() {
         <div>
           <span className="text-label">Súper administrador</span>
           <h1 className="text-h1 page-title">Dashboard Súper admin</h1>
-          <p className="page-subtitle">Vista panorámica de todo BEET: entidades, ventas, inventario y convenios.</p>
+          <p className="page-subtitle">Vista panorámica de todo BEET, desde PostgreSQL.</p>
         </div>
       </div>
 
       <div className="grid grid-kpi section-gap">
-        <KpiCard label="Entidades" value={resumen.cooperativas} deltaTone="neutral" delta="Registradas en BEET" />
-        <KpiCard label="Entidades activas" value={resumen.cooperativasActivas} deltaTone="neutral" delta={`de ${resumen.cooperativas} en total`} />
-        <KpiCard label="Afiliados" value={resumen.afiliados.toLocaleString('es-CO')} deltaTone="neutral" delta="En todas las entidades" />
-        <KpiCard label="Bonos/boletas vendidos" value={resumen.bonosVendidos.toLocaleString('es-CO')} deltaTone="neutral" delta="Transacciones completadas" />
+        <KpiCard label="Entidades" value={cooperativas.length} deltaTone="neutral" delta="Registradas en BEET" />
+        <KpiCard label="Entidades activas" value={cooperativasActivas} deltaTone="neutral" delta={`de ${cooperativas.length} en total`} />
+        <KpiCard label="Afiliados" value={totalAfiliados.toLocaleString('es-CO')} deltaTone="neutral" delta="En todas las entidades" />
+        <KpiCard label="Convenios en catálogo" value={convenios.length} deltaTone="neutral" delta={`${convenios.filter((c) => c.estado).length} activos`} />
       </div>
 
       <div className="grid grid-kpi section-gap">
         <KpiCard
           label="Solicitudes pendientes"
-          value={resumen.solicitudesPendientes}
-          deltaTone={resumen.solicitudesPendientes > 0 ? 'warning' : 'neutral'}
+          value={solicitudesPendientes.length}
+          deltaTone={solicitudesPendientes.length > 0 ? 'warning' : 'neutral'}
           delta="Entidad → GES"
         />
-        <KpiCard label="Transacciones" value={resumen.transacciones.toLocaleString('es-CO')} deltaTone="neutral" delta="Registradas en el sistema" />
-        <KpiCard label="Inventario total" value={resumen.inventarioTotal.toLocaleString('es-CO')} deltaTone="neutral" delta="Cargado por entidad" />
-        <KpiCard label="Inventario disponible" value={resumen.inventarioDisponible.toLocaleString('es-CO')} deltaTone="neutral" delta="Listo para vender" />
+        <KpiCard label="Transacciones" value={totalTransacciones.toLocaleString('es-CO')} deltaTone="neutral" delta="De afiliados" />
+        <KpiCard label="Inventario total" value={inventarioTotal.toLocaleString('es-CO')} deltaTone="neutral" delta="Cargado por entidad" />
+        <KpiCard label="Inventario disponible" value={inventarioDisponible.toLocaleString('es-CO')} deltaTone="neutral" delta="Listo para vender" />
       </div>
 
       <Card padding="card-pad-lg" className="section-gap">
@@ -56,67 +107,39 @@ export default function SuperAdminDashboard() {
         <div className="grid grid-3">
           <div>
             <div className="text-label">Total</div>
-            <div className="tabular" style={{ fontSize: 20, fontWeight: 600 }}>{resumen.inventarioTotal.toLocaleString('es-CO')}</div>
+            <div className="tabular" style={{ fontSize: 20, fontWeight: 600 }}>{inventarioTotal.toLocaleString('es-CO')}</div>
           </div>
           <div>
             <div className="text-label">Disponible</div>
-            <div className="tabular" style={{ fontSize: 20, fontWeight: 600 }}>{resumen.inventarioDisponible.toLocaleString('es-CO')}</div>
+            <div className="tabular" style={{ fontSize: 20, fontWeight: 600 }}>{inventarioDisponible.toLocaleString('es-CO')}</div>
           </div>
           <div>
-            <div className="text-label">Vendido</div>
-            <div className="tabular" style={{ fontSize: 20, fontWeight: 600 }}>{resumen.inventarioVendido.toLocaleString('es-CO')}</div>
+            <div className="text-label">Entregado</div>
+            <div className="tabular" style={{ fontSize: 20, fontWeight: 600 }}>{inventarioEntregado.toLocaleString('es-CO')}</div>
           </div>
         </div>
       </Card>
 
-      <div className="grid detail-grid-2col section-gap" style={{ '--col-ratio': '1.2fr 1fr', gap: 16 }}>
-        <Card padding="card-pad-lg">
-          <div className="text-label" style={{ marginBottom: 14 }}>Ventas por entidad</div>
-          {ventasPorCooperativa.length === 0 ? (
-            <div className="text-small cell-muted">Sin ventas registradas todavía.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {ventasPorCooperativa.map((c) => (
-                <div key={c.id}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-                    <span style={{ fontWeight: 500 }}>{c.nombre}</span>
-                    <span className="tabular" style={{ color: 'var(--text-muted)' }}>{formatCOP(c.ventas)} · {c.afiliados.toLocaleString('es-CO')} afiliados</span>
-                  </div>
-                  <div className="progress-track">
-                    <div className="progress-fill brand" style={{ width: `${(c.ventas / maxVentas) * 100}%` }} />
-                  </div>
+      <Card padding="card-pad-lg" className="section-gap">
+        <div className="text-label" style={{ marginBottom: 14 }}>Ventas por entidad</div>
+        {ventasPorCooperativa.every((c) => c.ventas === 0) ? (
+          <div className="text-small cell-muted">Sin ventas registradas todavía.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {ventasPorCooperativa.map((c) => (
+              <div key={c.cooperativa.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                  <span style={{ fontWeight: 500 }}>{c.cooperativa.nombre}</span>
+                  <span className="tabular" style={{ color: 'var(--text-muted)' }}>{formatCOP(c.ventas)} · {c.afiliados.length.toLocaleString('es-CO')} afiliados</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card padding="card-pad-lg">
-          <div className="text-label" style={{ marginBottom: 14 }}>Convenios más utilizados</div>
-          {conveniosMasUtilizados.length === 0 ? (
-            <div className="text-small cell-muted">Sin transacciones registradas todavía.</div>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table" style={{ minWidth: 0 }}>
-                <thead>
-                  <tr>
-                    <th>Convenio</th>
-                    <th className="right">Boletas vendidas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conveniosMasUtilizados.map((c) => (
-                    <tr key={c.id}>
-                      <td className="cell-primary">{c.nombre}</td>
-                      <td className="right tabular">{c.cantidad.toLocaleString('es-CO')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
+                <div className="progress-track">
+                  <div className="progress-fill brand" style={{ width: `${(c.ventas / maxVentas) * 100}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <div className="table-card">
         <div className="table-toolbar">
@@ -124,7 +147,7 @@ export default function SuperAdminDashboard() {
             <span className="text-label" style={{ marginBottom: 0 }}>Resumen de entidades</span>
           </div>
         </div>
-        {resumenCooperativas.length === 0 ? (
+        {porCooperativa.length === 0 ? (
           <EmptyState title="No hay entidades registradas" description="Las entidades de BEET aparecerán aquí." />
         ) : (
           <div className="table-scroll">
@@ -134,24 +157,22 @@ export default function SuperAdminDashboard() {
                   <th>Entidad</th>
                   <th>Estado</th>
                   <th className="right">Afiliados</th>
-                  <th className="right">Convenios activos</th>
                   <th className="right">Inventario</th>
                   <th className="right">Ventas</th>
-                  <th className="right">Cupo disponible</th>
-                  <th className="right">Cupo gastado</th>
+                  <th className="right">Bolsa disponible</th>
+                  <th className="right">Crédito disponible</th>
                 </tr>
               </thead>
               <tbody>
-                {resumenCooperativas.map((c) => (
-                  <tr key={c.id}>
-                    <td className="cell-primary">{c.nombre}</td>
-                    <td><StatusBadge status={c.estado} /></td>
-                    <td className="right tabular">{c.afiliados.toLocaleString('es-CO')}</td>
-                    <td className="right tabular">{c.conveniosActivos}</td>
-                    <td className="right tabular">{c.inventario.toLocaleString('es-CO')}</td>
+                {porCooperativa.map((c) => (
+                  <tr key={c.cooperativa.id}>
+                    <td className="cell-primary">{c.cooperativa.nombre}</td>
+                    <td><StatusBadge status={c.cooperativa.estado} /></td>
+                    <td className="right tabular">{c.afiliados.length.toLocaleString('es-CO')}</td>
+                    <td className="right tabular">{c.inventario.length.toLocaleString('es-CO')}</td>
                     <td className="right tabular">{formatCOP(c.ventas)}</td>
-                    <td className="right tabular">{formatCOP(c.cupoDisponible)}</td>
-                    <td className="right tabular">{formatCOP(c.cupoGastado)}</td>
+                    <td className="right tabular">{c.bolsa ? formatCOP(c.bolsa.valor - c.bolsa.consumido) : '—'}</td>
+                    <td className="right tabular">{c.credito ? formatCOP(c.credito.cupo_autorizado - c.credito.utilizado) : '—'}</td>
                   </tr>
                 ))}
               </tbody>

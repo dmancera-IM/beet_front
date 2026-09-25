@@ -1,254 +1,91 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
-import Button, { IconButton } from '../../../components/ui/Button';
-import { Checkbox, Field, Input, Select, Switch } from '../../../components/ui/Field';
-import { IconBuscar, IconDescargar, IconPlus, IconUpload } from '../../../components/ui/Icons';
-import { Dropdown, Pagination } from '../../../components/ui/Nav';
-import { StatusBadge, Badge } from '../../../components/ui/Badge';
+import Button from '../../../components/ui/Button';
+import { Field, Input } from '../../../components/ui/Field';
+import { IconBuscar, IconPlus } from '../../../components/ui/Icons';
+import { StatusBadge } from '../../../components/ui/Badge';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
-import PermissionGate from '../../../components/ui/PermissionGate';
-import Modal, { ConfirmDialog } from '../../../components/ui/Modal';
-import FileUploader from '../../../components/ui/FileUploader';
-import Alert from '../../../components/ui/Alert';
-import { useTableState } from '../../../hooks/useTableState';
 import * as convenioService from '../../../services/convenioService';
-import * as inventarioService from '../../../services/inventarioService';
 import { ApiError } from '../../../services/apiClient';
-import { formatCOP, formatDate } from '../../../utils/format';
+import { formatCOP } from '../../../utils/format';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
-import { useCooperativa } from '../../../context/CooperativaContext';
 import { useAreaBase } from '../../../hooks/useAreaBase';
-import RequireCooperativaSeleccionada from '../../../components/layout/RequireCooperativaSeleccionada';
 
-// NOTE: unlike an earlier design assumption, the real `convenios` table
-// has no `marca`, `categoria`, `tope`, or `tope_periodicidad` columns —
-// those filters/columns have been removed to match (see SCHEMA_NOTES.md).
-// `estado` is a plain boolean, and vigencia is `fecha_inicio`/`fecha_fin`.
+// ADAPTADO AL BACKEND REAL: la tabla `convenios` (y `productos`) es un
+// catálogo GLOBAL de GES — no existe `cooperativa_convenios` (que traía
+// precio_normal/precio_beet/vigencia POR cooperativa) en las 13 tablas de
+// este alcance. Por eso esta pantalla ahora muestra el catálogo real tal
+// cual, sin precios/ahorro/vigencia por entidad (esos campos no existen en
+// ningún lado del esquema actual). Solo GES/SUPER_ADMIN pueden crear/activar
+// convenios y productos (el backend lo exige); ADMIN/LECTOR lo ven en
+// modo lectura.
 export default function ConveniosList() {
   useSetBreadcrumbs([{ label: 'Convenios' }]);
   const navigate = useNavigate();
   const { push } = useToast();
-  const { permissions } = useAuth();
-  const { necesitaSeleccion, selectedId, selected, isSuperAdmin } = useCooperativa();
+  const { role, roles } = useAuth();
   const base = useAreaBase();
+  const puedeEscribir = role === roles.GES || role === roles.SUPER_ADMIN;
 
   const [convenios, setConvenios] = useState([]);
+  const [productosPorConvenio, setProductosPorConvenio] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [inventarioPorConvenio, setInventarioPorConvenio] = useState({});
-  const [openMenuId, setOpenMenuId] = useState(null);
-  const [confirmTarget, setConfirmTarget] = useState(null);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState(null);
-  const [exporting, setExporting] = useState(false);
-
-  const [catalogoOpen, setCatalogoOpen] = useState(false);
-  const [seleccionCatalogo, setSeleccionCatalogo] = useState({});
-  const [guardandoCatalogo, setGuardandoCatalogo] = useState(false);
-  const [catalogoMaestro, setCatalogoMaestro] = useState([]);
-  const [cargandoCatalogoMaestro, setCargandoCatalogoMaestro] = useState(false);
-
-  const [modificarOpen, setModificarOpen] = useState(false);
-  const [convenioAModificar, setConvenioAModificar] = useState('');
+  const [search, setSearch] = useState('');
 
   const cargar = useCallback(() => {
-    if (necesitaSeleccion) return;
     setLoading(true);
     setError(null);
     convenioService
-      .listarConvenios({ pageSize: 100 })
-      .then((data) => {
-        setConvenios(data.items);
-        // A convenio (cooperativas_convenios row) can now have MULTIPLE
-        // productos (sección 7) — the "Inventario" column sums DISPONIBLE
-        // across all of a convenio's productos. One batch of calls per
-        // convenio row — fine at this dataset size for an integration
-        // test; a later pass could add an aggregate endpoint.
-        Promise.all(
-          data.items.map((c) =>
-            convenioService
-              .listarProductosDeConvenio(c.id_convenio)
-              .then((productos) =>
-                productos.length === 0
-                  ? [c.id, null]
-                  : Promise.all(productos.map((p) => inventarioService.resumenInventario(p.id).catch(() => null))).then((resumenes) => [
-                      c.id,
-                      { disponible: resumenes.reduce((s, r) => s + (r?.disponible ?? 0), 0) },
-                    ])
-              )
-              .catch(() => [c.id, null])
-          )
-        ).then((pairs) => setInventarioPorConvenio(Object.fromEntries(pairs)));
+      .listarConvenios()
+      .then(async (data) => {
+        setConvenios(data);
+        const pares = await Promise.all(
+          data.map((c) => convenioService.listarProductos({ idConvenio: c.id }).then((p) => [c.id, p]).catch(() => [c.id, []]))
+        );
+        setProductosPorConvenio(Object.fromEntries(pares));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No pudimos cargar los convenios.'))
       .finally(() => setLoading(false));
-  }, [necesitaSeleccion]);
+  }, []);
 
-  useEffect(() => { cargar(); }, [cargar, selectedId]);
-
-  const { search, setSearch, filters, setFilter, pageRows, page, setPage, totalPages, total } = useTableState({
-    data: convenios,
-    searchFields: ['nombre', 'id'],
-    pageSize: 8,
-    // Only active convenios by default — a deactivated one shouldn't
-    // look identical to an active one in the main list; "Todo estado"
-    // in the Select above still lets an admin bring inactive ones back.
-    defaultFilters: { estado: true },
-  });
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const { blob, filename } = await convenioService.exportarConvenios();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      push({ title: 'Convenios exportados', description: filename });
-    } catch (err) {
-      push({ title: 'No se pudo exportar', description: err.message, variant: 'error' });
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleUpload = async (file) => {
-    setUploading(true);
-    setUploadResult(null);
-    try {
-      const result = await convenioService.cargaMasivaConvenios(file);
-      setUploadResult(result);
-      push({
-        title: result.invalidos > 0 ? 'Carga procesada con filas inválidas' : 'Convenios procesados',
-        description: result.detail,
-        variant: result.invalidos > 0 ? 'error' : 'success',
-      });
-      cargar();
-    } catch (err) {
-      push({ title: 'No se pudo procesar el archivo', description: err.message, variant: 'error' });
-    } finally {
-      setUploading(false);
-    }
-  };
+  useEffect(() => { cargar(); }, [cargar]);
 
   const toggleEstado = async (convenio) => {
-    const nuevoEstado = !convenio.estado;
     try {
-      const actualizado = await convenioService.actualizarConvenio(convenio.id, { estado: nuevoEstado });
+      const actualizado = await convenioService.actualizarConvenio(convenio.id, { estado: !convenio.estado });
       setConvenios((prev) => prev.map((c) => (c.id === convenio.id ? actualizado : c)));
-      push({ title: nuevoEstado ? 'Convenio activado' : 'Convenio desactivado', description: convenio.nombre });
+      push({ title: actualizado.estado ? 'Convenio activado' : 'Convenio desactivado', description: convenio.nombre });
     } catch (err) {
       push({ title: 'No se pudo actualizar el convenio', description: err.message, variant: 'error' });
     }
   };
 
-  // Catálogo maestro de convenios creado por GES (sección 9) — la
-  // cooperativa solo puede elegir de esta lista, nunca escribir un nombre
-  // nuevo directamente (ver sección 11).
-  const idsYaAgregados = new Set(convenios.map((c) => c.id_convenio));
-  const catalogoDisponible = catalogoMaestro.filter((p) => !idsYaAgregados.has(p.id));
-
-  const abrirCatalogo = () => {
-    setSeleccionCatalogo({});
-    setCatalogoOpen(true);
-    setCargandoCatalogoMaestro(true);
-    convenioService
-      .listarCatalogoMaestroConvenios()
-      .then(setCatalogoMaestro)
-      .catch((err) => push({ title: 'No se pudo cargar el catálogo maestro', description: err.message, variant: 'error' }))
-      .finally(() => setCargandoCatalogoMaestro(false));
-  };
-
-  const confirmarAgregarConvenios = async () => {
-    const seleccionados = catalogoDisponible.filter((p) => seleccionCatalogo[p.id]);
-    if (seleccionados.length === 0) return;
-    setGuardandoCatalogo(true);
-    const hoy = new Date().toISOString().slice(0, 10);
-    try {
-      await Promise.all(
-        seleccionados.map((p) =>
-          convenioService.crearConvenio({
-            id_convenio: p.id,
-            nombre: p.nombre,
-            descripcion: null,
-            precio_normal: 0,
-            precio_beet: 0,
-            fecha_inicio: hoy,
-            fecha_fin: null,
-            estado: true,
-          })
-        )
-      );
-      push({
-        title: seleccionados.length === 1 ? 'Convenio agregado' : 'Convenios agregados',
-        description: `${seleccionados.map((p) => p.nombre).join(', ')} — configura precio y vigencia con “Modificar convenio”.`,
-      });
-      setCatalogoOpen(false);
-      cargar();
-    } catch (err) {
-      push({ title: 'No se pudieron agregar los convenios', description: err.message, variant: 'error' });
-    } finally {
-      setGuardandoCatalogo(false);
-    }
-  };
-
-  const abrirModificar = () => {
-    setConvenioAModificar(convenios[0]?.id ?? '');
-    setModificarOpen(true);
-  };
-
-  const confirmarModificar = () => {
-    if (!convenioAModificar) return;
-    setModificarOpen(false);
-    navigate(`${base}/convenios/${convenioAModificar}/editar`);
-  };
+  const filtrados = convenios.filter((c) => c.nombre.toLowerCase().includes(search.trim().toLowerCase()));
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Convenios</h1>
-          <p className="page-subtitle">Precios, ahorro, vigencia, inventario y estado de cada convenio, desde PostgreSQL.</p>
-          {isSuperAdmin && (
-            <p className="text-caption" style={{ marginTop: 4 }}>
-              {selected ? `Estás gestionando datos de: ${selected.nombre}` : 'Selecciona una entidad arriba para empezar.'}
-            </p>
-          )}
+          <p className="page-subtitle">Catálogo de convenios y productos, desde PostgreSQL.</p>
         </div>
-        <div className="page-header-actions">
-          <PermissionGate>
-            <Button variant="secondary" onClick={abrirModificar} disabled={necesitaSeleccion || convenios.length === 0}>Modificar convenio</Button>
-            <Button icon={<IconPlus color="#fff" />} onClick={abrirCatalogo} disabled={necesitaSeleccion}>Agregar convenio</Button>
-          </PermissionGate>
-        </div>
+        {puedeEscribir && (
+          <div className="page-header-actions">
+            <Button icon={<IconPlus color="#fff" />} onClick={() => navigate(`${base}/convenios/nuevo`)}>Crear convenio</Button>
+          </div>
+        )}
       </div>
 
-      {necesitaSeleccion ? (
-        <RequireCooperativaSeleccionada />
-      ) : (
       <div className="table-card">
         <div className="table-toolbar">
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 260 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar por nombre o ID" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Buscar por nombre" value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
-            <Select
-              style={{ width: 140 }}
-              value={filters.estado === undefined ? '' : String(filters.estado)}
-              onChange={(e) => setFilter('estado', e.target.value === '' ? undefined : e.target.value === 'true')}
-            >
-              <option value="">Todo estado</option>
-              <option value="true">Activo</option>
-              <option value="false">Inactivo</option>
-            </Select>
           </div>
         </div>
 
@@ -256,78 +93,40 @@ export default function ConveniosList() {
           <LoadingState title="Cargando convenios desde PostgreSQL…" />
         ) : error ? (
           <ErrorState description={error} onRetry={cargar} />
-        ) : pageRows.length === 0 ? (
-          total === 0 ? (
-            <EmptyState title="No hay convenios registrados" description="Crea el primer convenio para esta entidad." />
-          ) : (
-            <EmptyState title="Sin convenios que coincidan" description="Ajusta los filtros o el término de búsqueda." />
-          )
+        ) : filtrados.length === 0 ? (
+          <EmptyState title="No hay convenios registrados" description="GES todavía no ha creado ningún convenio." />
         ) : (
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Convenio</th>
-                  <th className="right">Precio BEET</th>
-                  <th className="right">Precio normal</th>
-                  <th className="right">Ahorro</th>
-                  <th>Vigencia</th>
-                  <th>Inventario</th>
+                  <th>Productos</th>
                   <th>Estado</th>
-                  <th></th>
+                  {puedeEscribir && <th></th>}
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((c) => {
-                  const ahorroPct = c.precio_normal ? Math.round(((c.precio_normal - c.precio_beet) / c.precio_normal) * 100) : 0;
-                  const inv = inventarioPorConvenio[c.id];
+                {filtrados.map((c) => {
+                  const productos = productosPorConvenio[c.id] ?? [];
                   return (
                     <tr key={c.id}>
                       <td>
                         <Link to={`${base}/convenios/${c.id}`} className="cell-primary" style={{ color: 'var(--text-primary)', textDecoration: 'none' }}>{c.nombre}</Link>
-                        <div className="cell-muted">{c.descripcion ?? '—'}</div>
                       </td>
-                      <td className="right tabular">{formatCOP(c.precio_beet)}</td>
-                      <td className="right tabular" style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}>{formatCOP(c.precio_normal)}</td>
-                      <td className="right">
-                        <div className="tabular" style={{ fontWeight: 600 }}>{formatCOP(c.precio_normal - c.precio_beet)}</div>
-                        <Badge tone="green" dot>{ahorroPct}%</Badge>
+                      <td className="text-small">
+                        {productos.length === 0
+                          ? 'Sin productos'
+                          : productos.map((p) => `${p.nombre} (${p.precio_venta_entidad != null ? formatCOP(p.precio_venta_entidad) : 'sin precio'})`).join(', ')}
                       </td>
-                      <td className="text-small">{formatDate(c.fecha_inicio)}{c.fecha_fin ? ` – ${formatDate(c.fecha_fin)}` : ' – sin fin'}</td>
-                      <td className="text-small">{inv ? `${inv.disponible} disponibles` : '—'}</td>
-                      <td>
-                        <PermissionGate fallback={<StatusBadge status={c.estado} />}>
-                          <Switch
-                            label={c.estado ? 'Activo' : 'Inactivo'}
-                            checked={c.estado}
-                            onChange={() => toggleEstado(c)}
-                          />
-                        </PermissionGate>
-                      </td>
-                      <td className="right" style={{ position: 'relative' }}>
-                        <IconButton
-                          size="sm"
-                          label="Más acciones"
-                          onClick={() => setOpenMenuId(openMenuId === c.id ? null : c.id)}
-                          icon={<svg width="16" height="16" viewBox="0 0 20 20" fill="none"><circle cx="4" cy="10" r="1.4" fill="#1F2937" /><circle cx="10" cy="10" r="1.4" fill="#1F2937" /><circle cx="16" cy="10" r="1.4" fill="#1F2937" /></svg>}
-                        />
-                        <Dropdown
-                          open={openMenuId === c.id}
-                          onClose={() => setOpenMenuId(null)}
-                          style={{ top: 40, right: 0 }}
-                          items={[
-                            { label: 'Ver detalle', onClick: () => navigate(`${base}/convenios/${c.id}`) },
-                            { label: 'Ver inventario', onClick: () => navigate(`${base}/inventario/${c.id}`) },
-                            ...(permissions.write
-                              ? [
-                                  { label: 'Editar', onClick: () => navigate(`${base}/convenios/${c.id}/editar`) },
-                                  { divider: true },
-                                  { label: 'Eliminar', danger: true, onClick: () => setConfirmTarget(c) },
-                                ]
-                              : []),
-                          ]}
-                        />
-                      </td>
+                      <td><StatusBadge status={c.estado} /></td>
+                      {puedeEscribir && (
+                        <td className="right">
+                          <Button size="sm" variant="secondary" onClick={() => toggleEstado(c)}>
+                            {c.estado ? 'Desactivar' : 'Activar'}
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -335,118 +134,7 @@ export default function ConveniosList() {
             </table>
           </div>
         )}
-
-        {!loading && !error && (
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${total} convenios`} />
-        )}
       </div>
-      )}
-
-      <Modal
-        open={uploadOpen}
-        onClose={() => { if (!uploading) { setUploadOpen(false); setUploadResult(null); } }}
-        title="Cargar convenios"
-        actions={<Button variant="secondary" onClick={() => { setUploadOpen(false); setUploadResult(null); }} disabled={uploading}>Cerrar</Button>}
-      >
-        <p style={{ marginTop: 0 }}>Archivo Excel o CSV con columnas: nombre, descripcion, precio_normal, precio_beet, fecha_inicio, fecha_fin, estado. Es un upsert: actualiza por nombre exacto si ya existe. Se envía a <code>POST /api/convenios/carga-masiva</code>.</p>
-        {isSuperAdmin && selected && (
-          <p className="text-caption" style={{ marginTop: -8, marginBottom: 12 }}>Estás gestionando datos de: <strong>{selected.nombre}</strong></p>
-        )}
-        <FileUploader hint="Excel o CSV · máx. 10 MB" onFile={handleUpload} />
-        {uploading && <LoadingState title="Procesando archivo en el backend…" />}
-        {!uploading && uploadResult && (
-          <div style={{ marginTop: 16 }}>
-            <Alert tone={uploadResult.invalidos > 0 ? 'error' : 'success'} title={uploadResult.detail}>
-              {uploadResult.errores?.length > 0 && (
-                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                  {uploadResult.errores.slice(0, 10).map((e, i) => <li key={i}>{e}</li>)}
-                  {uploadResult.errores.length > 10 && <li>…y {uploadResult.errores.length - 10} fila(s) más.</li>}
-                </ul>
-              )}
-              {uploadResult.cambios?.length > 0 && (
-                <>
-                  <div className="text-caption" style={{ marginTop: 10, fontWeight: 600 }}>Qué cambió exactamente:</div>
-                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                    {uploadResult.cambios.slice(0, 10).map((c, i) => <li key={i}>{c}</li>)}
-                    {uploadResult.cambios.length > 10 && <li>…y {uploadResult.cambios.length - 10} cambio(s) más.</li>}
-                  </ul>
-                </>
-              )}
-            </Alert>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={catalogoOpen}
-        onClose={() => !guardandoCatalogo && setCatalogoOpen(false)}
-        title="Agregar convenio"
-        actions={
-          <>
-            <Button variant="secondary" onClick={() => setCatalogoOpen(false)} disabled={guardandoCatalogo}>Cancelar</Button>
-            <Button onClick={confirmarAgregarConvenios} loading={guardandoCatalogo} disabled={catalogoDisponible.length === 0}>Agregar</Button>
-          </>
-        }
-      >
-        <p className="text-caption cell-muted" style={{ marginTop: 0 }}>
-          Selecciona uno o varios convenios del catálogo maestro de GES. El precio y la vigencia se configuran después con “Modificar convenio”.
-        </p>
-        {cargandoCatalogoMaestro ? (
-          <LoadingState title="Cargando catálogo maestro…" />
-        ) : catalogoDisponible.length === 0 ? (
-          <EmptyState title="Ya agregaste todos los convenios disponibles" description="GES todavía no ha publicado más convenios en el catálogo maestro." />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {catalogoDisponible.map((p) => (
-              <Checkbox
-                key={p.id}
-                label={p.nombre}
-                checked={!!seleccionCatalogo[p.id]}
-                onChange={(e) => setSeleccionCatalogo((s) => ({ ...s, [p.id]: e.target.checked }))}
-              />
-            ))}
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={modificarOpen}
-        onClose={() => setModificarOpen(false)}
-        title="Modificar convenio"
-        actions={
-          <>
-            <Button variant="secondary" onClick={() => setModificarOpen(false)}>Cancelar</Button>
-            <Button onClick={confirmarModificar} disabled={!convenioAModificar}>Continuar</Button>
-          </>
-        }
-      >
-        <Field label="Convenio" hint="Configura precio BEET, precio normal y vigencia para los trabajadores de tu entidad.">
-          <Select value={convenioAModificar} onChange={(e) => setConvenioAModificar(e.target.value)}>
-            {convenios.map((c) => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
-            ))}
-          </Select>
-        </Field>
-      </Modal>
-
-      <ConfirmDialog
-        open={!!confirmTarget}
-        onClose={() => setConfirmTarget(null)}
-        title={`¿Eliminar ${confirmTarget?.nombre}?`}
-        description="Esta acción no elimina las transacciones ya registradas ni el inventario ya entregado. El convenio se marca como inactivo y desaparece del catálogo del afiliado (no hay borrado físico en la base de datos)."
-        confirmLabel="Eliminar convenio"
-        onConfirm={async () => {
-          try {
-            const actualizado = await convenioService.actualizarConvenio(confirmTarget.id, { estado: false });
-            setConvenios((prev) => prev.map((c) => (c.id === confirmTarget.id ? actualizado : c)));
-            push({ title: 'Convenio eliminado del catálogo', description: confirmTarget.nombre, variant: 'error' });
-          } catch (err) {
-            push({ title: 'No se pudo eliminar el convenio', description: err.message, variant: 'error' });
-          } finally {
-            setConfirmTarget(null);
-          }
-        }}
-      />
     </div>
   );
 }

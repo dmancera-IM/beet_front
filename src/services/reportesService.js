@@ -1,16 +1,12 @@
-import { apiClient } from "./apiClient";
+import { ApiError } from "./apiClient";
 
-export function obtenerRendimientoConvenios() {
-  return apiClient.get("/api/reportes/rendimiento-convenios", { tokenAudience: "admin" });
+// PENDIENTE: no existen endpoints /reportes/* en el backend actual (ni
+// exportación a Excel). Reportes.jsx muestra un estado "no disponible" en
+// vez de datos simulados; Dashboard.jsx ya no depende de este servicio.
+function noDisponible() {
+  return Promise.reject(new ApiError("Los reportes no están disponibles: el backend actual no expone estos endpoints.", 501, null));
 }
 
-// Both resolve to { blob, filename } — real .xlsx bytes, not JSON, with
-// the server-generated dated filename (Content-Disposition) rather than
-// one the frontend has to guess. See apiClient.getBlobWithFilename.
-export function exportarRendimientoConvenios() {
-  return apiClient.getBlobWithFilename("/api/reportes/rendimiento-convenios/exportar", { tokenAudience: "admin" }, "rendimiento_convenios.xlsx");
-}
-
-export function exportarAfiliados() {
-  return apiClient.getBlobWithFilename("/api/reportes/afiliados/exportar", { tokenAudience: "admin" }, "afiliados.xlsx");
-}
+export const obtenerRendimientoConvenios = noDisponible;
+export const exportarRendimientoConvenios = noDisponible;
+export const exportarAfiliados = noDisponible;

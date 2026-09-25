@@ -1,29 +1,31 @@
-import { apiClient } from "./apiClient";
+// Inventario real de la cooperativa (beet_backend/app/routers/inventario.py)
+// — unidades ya asignadas desde storage_ges vía una solicitud de compra
+// completada. Solo lectura: el backend nunca acepta escribir aquí
+// directamente (las unidades se crean únicamente a través de
+// solicitudes-compra, ver solicitudesService.js).
+import { apiClient, ApiError } from "./apiClient";
 
-// Las unidades de inventario se identifican por PRODUCTO (productos_convenio),
-// no por convenio — un convenio puede tener varios productos y cada uno
-// tiene su propia bolsa de códigos (ver FRONTEND_DB_ALIGNMENT.md, sección 12).
-export function listarInventario(productoId, { estado, page = 1, pageSize = 50 } = {}) {
-  const params = new URLSearchParams({ producto_id: productoId, page, page_size: pageSize });
+export function listarInventario({ cooperativaId, idProducto, estado } = {}) {
+  const params = new URLSearchParams();
+  if (cooperativaId) params.set("cooperativa_id", cooperativaId);
+  if (idProducto) params.set("id_producto", idProducto);
   if (estado) params.set("estado", estado);
-  return apiClient.get(`/api/inventario?${params.toString()}`, { tokenAudience: "admin" });
+  const query = params.toString();
+  return apiClient.get(`/inventario${query ? `?${query}` : ""}`, { tokenAudience: "admin" });
 }
 
-export function resumenInventario(productoId) {
-  return apiClient.get(`/api/inventario/resumen?producto_id=${productoId}`, { tokenAudience: "admin" });
+export async function resumenInventario(productoId) {
+  const unidades = await listarInventario({ idProducto: productoId });
+  const disponible = unidades.filter((u) => u.estado === "DISPONIBLE").length;
+  const vendidas = unidades.filter((u) => u.estado === "VENDIDO").length;
+  const vencidas = unidades.filter((u) => u.estado === "VENCIDO").length;
+  return { producto_id: productoId, total: unidades.length, disponible, vendidas, vencidas };
 }
 
-export function cargaInventario(productoId, file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return apiClient.postForm(`/api/inventario/carga?producto_id=${productoId}`, formData, { tokenAudience: "admin" });
+export function cargaInventario() {
+  return Promise.reject(new ApiError("La carga de inventario por archivo no está disponible: usa una solicitud de compra.", 501, null));
 }
 
-// Unlike cargaInventario above (codes for one already-selected producto),
-// this loads codes for MULTIPLE productos in one file — each row names its
-// own convenio/producto. See backend/templates/plantilla_inventario.xlsx.
-export function cargaMasivaInventario(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return apiClient.postForm("/api/inventario/carga-masiva", formData, { tokenAudience: "admin" });
+export function cargaMasivaInventario() {
+  return Promise.reject(new ApiError("La carga masiva de inventario no está disponible: usa una solicitud de compra.", 501, null));
 }

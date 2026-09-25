@@ -1,109 +1,120 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { KpiCard } from '../../../components/ui/Card';
-import { Field, Input, Select } from '../../../components/ui/Field';
-import { IconBuscar, IconClose, IconPlus } from '../../../components/ui/Icons';
+import { Field, Select, Textarea } from '../../../components/ui/Field';
+import { IconBuscar, IconPlus } from '../../../components/ui/Icons';
 import Button from '../../../components/ui/Button';
 import Modal from '../../../components/ui/Modal';
-import FileUploader from '../../../components/ui/FileUploader';
-import { EmptyState } from '../../../components/ui/States';
-import { useTableState } from '../../../hooks/useTableState';
+import Alert from '../../../components/ui/Alert';
+import { Input } from '../../../components/ui/Field';
+import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
+import { StatusBadge } from '../../../components/ui/Badge';
 import { useToast } from '../../../context/ToastContext';
+import * as storageService from '../../../services/storageService';
+import * as convenioService from '../../../services/convenioService';
 import GesNav from './GesNav';
-import { getAsignacionesPorProveedor, getInventarioCentral, getProductos, getProveedores } from './gesData';
 
-// STORAGE: el almacenamiento central de GES — qué bonos/boletas tiene
-// disponibles para asignar a las cooperativas, y cuánto ya asignó. Distinto
-// del inventario que cada cooperativa recibe (eso vive en
-// pages/admin/cooperativa/Inventario.jsx) — GES nunca mezcla ambas vistas.
+// ADAPTADO AL BACKEND REAL (beet_backend/app/routers/storage.py): no hay
+// parser de Excel/XML definido todavía — el formato del archivo del
+// proveedor no está oficialmente definido, así que esta pantalla ya NO
+// simula una carga de XML. En su lugar, envía la lista de códigos (uno por
+// línea, tal cual, sin generar ni prefijar nada) al endpoint real
+// `POST /storage/bulk`. Cuando exista un formato de archivo oficial, un
+// parser puede reemplazar este textarea sin tocar el backend.
 export default function Storage() {
   useSetBreadcrumbs([{ label: 'GES', to: '/ges' }, { label: 'Storage' }]);
   const { push } = useToast();
 
-  const storage = getInventarioCentral();
-  const [detalle, setDetalle] = useState(null);
+  const [storage, setStorage] = useState([]);
+  const [convenios, setConvenios] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
-  const [proveedorId, setProveedorId] = useState('');
+  const [convenioId, setConvenioId] = useState('');
   const [productoId, setProductoId] = useState('');
-  const [xmlFile, setXmlFile] = useState(null);
+  const [codigosTexto, setCodigosTexto] = useState('');
+  const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const { search, setSearch, pageRows, total } = useTableState({
-    data: storage,
-    searchFields: ['proveedor', 'producto'],
-    pageSize: 50,
-  });
+  const cargar = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([storageService.listarStorage(), convenioService.listarConvenios(), convenioService.listarProductos({})])
+      .then(([s, c, p]) => {
+        setStorage(s);
+        setConvenios(c);
+        setProductos(p);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const productosDelConvenio = getProductos(proveedorId);
+  useEffect(() => { cargar(); }, [cargar]);
 
-  const totalDisponible = storage.reduce((s, i) => s + i.disponible, 0);
-  const totalAsignado = storage.reduce((s, i) => s + i.asignado, 0);
-
-  const cerrarForm = () => {
-    if (saving) return;
-    setFormOpen(false);
-    setProveedorId('');
-    setProductoId('');
-    setXmlFile(null);
+  const productosDelConvenio = productos.filter((p) => String(p.id_convenio) === String(convenioId));
+  const productoNombre = (id) => productos.find((p) => p.id === id)?.nombre ?? `#${id}`;
+  const convenioNombreDeProducto = (idProducto) => {
+    const p = productos.find((pr) => pr.id === idProducto);
+    return convenios.find((c) => c.id === p?.id_convenio)?.nombre ?? '—';
   };
 
   const abrirForm = () => {
-    const primerProveedor = getProveedores()[0]?.id ?? '';
-    setProveedorId(primerProveedor);
-    setProductoId(getProductos(primerProveedor)[0]?.id ?? '');
-    setXmlFile(null);
+    const primerConvenio = convenios[0]?.id ?? '';
+    setConvenioId(primerConvenio);
+    setProductoId(productos.find((p) => String(p.id_convenio) === String(primerConvenio))?.id ?? '');
+    setCodigosTexto('');
+    setFechaVencimiento('');
     setFormOpen(true);
   };
 
-  const handleProveedorChange = (id) => {
-    setProveedorId(id);
-    setProductoId(getProductos(id)[0]?.id ?? '');
+  const handleConvenioChange = (id) => {
+    setConvenioId(id);
+    setProductoId(productos.find((p) => String(p.id_convenio) === String(id))?.id ?? '');
   };
 
-  const handleFile = (file) => {
-    if (!file.name.toLowerCase().endsWith('.xml')) {
-      push({ title: 'Archivo no válido', description: 'Solo se aceptan archivos .xml.', variant: 'error' });
-      return;
-    }
-    setXmlFile(file);
-  };
+  const codigos = codigosTexto.split('\n').map((c) => c.trim()).filter(Boolean);
 
-  // Simulación visual únicamente: no se procesa el XML, no se conecta con
-  // ningún proveedor y no se modifica el inventario real de Storage. Los
-  // proveedores (Cine Colombia, Mundo Aventura, Éxito, etc.) entregarán más
-  // adelante estos archivos con la información real de bonos/boletas.
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!proveedorId || !productoId || !xmlFile) return;
-    const nombreConvenio = getProveedores().find((p) => p.id === proveedorId)?.nombre ?? '';
-    const nombreProducto = productosDelConvenio.find((p) => p.id === Number(productoId))?.nombre ?? '';
+    if (!productoId || codigos.length === 0) return;
     setSaving(true);
-    setTimeout(() => {
-      push({ title: 'XML cargado', description: `${xmlFile.name} se procesó correctamente para ${nombreConvenio} · ${nombreProducto} (simulación).` });
+    try {
+      await storageService.cargarCodigosEnLote({ idProducto: Number(productoId), codigos, fechaVencimiento: fechaVencimiento || null });
+      push({ title: 'Códigos cargados', description: `${codigos.length} código(s) agregados a Storage.` });
+      setFormOpen(false);
+      cargar();
+    } catch (err) {
+      push({ title: 'No se pudo cargar el storage', description: err.message, variant: 'error' });
+    } finally {
       setSaving(false);
-      cerrarForm();
-    }, 600);
+    }
   };
+
+  const filtrado = storage.filter((s) => productoNombre(s.id_producto).toLowerCase().includes(search.trim().toLowerCase()));
+  const disponibles = storage.filter((s) => s.estado === 'DISPONIBLE').length;
+  const asignados = storage.filter((s) => s.estado === 'ASIGNADO').length;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="text-h1 page-title">Storage</h1>
-          <p className="page-subtitle">Qué tiene GES disponible, cuánto ha asignado a entidades y cuánto le queda por convenio.</p>
+          <p className="page-subtitle">Códigos disponibles para asignar a las entidades, desde PostgreSQL.</p>
         </div>
         <div className="page-header-actions">
-          <Button icon={<IconPlus color="#fff" />} onClick={abrirForm}>Agregar storage</Button>
+          <Button icon={<IconPlus color="#fff" />} onClick={abrirForm} disabled={convenios.length === 0}>Agregar códigos</Button>
         </div>
       </div>
 
       <GesNav />
 
       <div className="grid grid-kpi section-gap">
-        <KpiCard label="Disponible" value={totalDisponible.toLocaleString('es-CO')} deltaTone="neutral" delta="Listo para asignar" />
-        <KpiCard label="Compradas" value={totalAsignado.toLocaleString('es-CO')} deltaTone="neutral" delta="Entregado a entidades" />
-        <KpiCard label="Total" value={(totalDisponible + totalAsignado).toLocaleString('es-CO')} deltaTone="neutral" delta="En Storage" />
+        <KpiCard label="Disponibles" value={disponibles.toLocaleString('es-CO')} deltaTone="neutral" delta="Listos para asignar" />
+        <KpiCard label="Asignados" value={asignados.toLocaleString('es-CO')} deltaTone="neutral" delta="Entregados a entidades" />
+        <KpiCard label="Total" value={storage.length.toLocaleString('es-CO')} deltaTone="neutral" delta="En Storage" />
       </div>
 
       <div className="table-card">
@@ -111,17 +122,17 @@ export default function Storage() {
           <div className="table-toolbar-left">
             <label className="input-affix-wrap" style={{ width: 260 }}>
               <span className="input-affix-icon"><IconBuscar size={16} color="var(--text-muted)" /></span>
-              <Input placeholder="Buscar convenio o proveedor..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Buscar producto..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
           </div>
         </div>
 
-        {pageRows.length === 0 ? (
-          total === 0 ? (
-            <EmptyState title="Sin bonos/boletas en Storage" description="El inventario que GES reciba de sus proveedores aparecerá aquí." />
-          ) : (
-            <EmptyState title="Sin resultados" description="Ajusta el término de búsqueda." />
-          )
+        {loading ? (
+          <LoadingState title="Cargando storage desde PostgreSQL…" />
+        ) : error ? (
+          <ErrorState description={error} onRetry={cargar} />
+        ) : filtrado.length === 0 ? (
+          <EmptyState title="Sin códigos en Storage" description="Los códigos que cargues aparecerán aquí." />
         ) : (
           <div className="table-scroll">
             <table className="data-table">
@@ -129,21 +140,19 @@ export default function Storage() {
                 <tr>
                   <th>Convenio</th>
                   <th>Producto</th>
-                  <th className="right">Disponibles</th>
-                  <th className="right">Vendidas</th>
-                  <th className="right">Total</th>
-                  <th></th>
+                  <th>Código</th>
+                  <th>Estado</th>
+                  <th>Vencimiento</th>
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((i) => (
-                  <tr key={i.productoId}>
-                    <td className="cell-primary">{i.proveedor}</td>
-                    <td>{i.producto}</td>
-                    <td className="right tabular">{i.disponible.toLocaleString('es-CO')}</td>
-                    <td className="right tabular">{i.asignado.toLocaleString('es-CO')}</td>
-                    <td className="right tabular">{i.total.toLocaleString('es-CO')}</td>
-                    <td className="right"><Button size="sm" variant="secondary" onClick={() => setDetalle(i)}>Ver detalle</Button></td>
+                {filtrado.map((s) => (
+                  <tr key={s.id}>
+                    <td className="cell-primary">{convenioNombreDeProducto(s.id_producto)}</td>
+                    <td>{productoNombre(s.id_producto)}</td>
+                    <td className="text-small tabular">{s.codigo}</td>
+                    <td><StatusBadge status={s.estado} /></td>
+                    <td className="text-small">{s.fecha_vencimiento ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -153,63 +162,26 @@ export default function Storage() {
       </div>
 
       <Modal
-        open={!!detalle}
-        onClose={() => setDetalle(null)}
-        title={detalle ? `Storage · ${detalle.proveedor} · ${detalle.producto}` : ''}
-        actions={<Button variant="secondary" onClick={() => setDetalle(null)}>Cerrar</Button>}
-      >
-        {detalle && (
-          <div>
-            <div className="grid grid-3" style={{ marginBottom: 18 }}>
-              <div>
-                <div className="text-label">Disponible</div>
-                <div className="tabular" style={{ fontSize: 18, fontWeight: 600 }}>{detalle.disponible.toLocaleString('es-CO')}</div>
-              </div>
-              <div>
-                <div className="text-label">Vendidas</div>
-                <div className="tabular" style={{ fontSize: 18, fontWeight: 600 }}>{detalle.asignado.toLocaleString('es-CO')}</div>
-              </div>
-              <div>
-                <div className="text-label">Total</div>
-                <div className="tabular" style={{ fontSize: 18, fontWeight: 600 }}>{detalle.total.toLocaleString('es-CO')}</div>
-              </div>
-            </div>
-            <div className="text-label" style={{ marginBottom: 10 }}>Comprado por entidad</div>
-            {getAsignacionesPorProveedor(detalle.proveedorId).length === 0 ? (
-              <div className="text-small cell-muted">Todavía no hay ventas de este producto a ninguna entidad.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {getAsignacionesPorProveedor(detalle.proveedorId).map((a) => (
-                  <div key={`${a.cooperativaId}-${a.productoId}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                    <span>{a.cooperativaNombre} <span className="cell-muted">· {a.productoNombre}</span></span>
-                    <span className="tabular">{a.cantidad.toLocaleString('es-CO')}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      <Modal
         open={formOpen}
-        onClose={cerrarForm}
-        title="Agregar storage"
+        onClose={() => !saving && setFormOpen(false)}
+        title="Agregar códigos a Storage"
         actions={
           <>
-            <Button variant="secondary" onClick={cerrarForm} disabled={saving}>Cancelar</Button>
-            <Button onClick={handleSubmit} loading={saving} disabled={!proveedorId || !productoId || !xmlFile}>Cargar XML</Button>
+            <Button variant="secondary" onClick={() => setFormOpen(false)} disabled={saving}>Cancelar</Button>
+            <Button onClick={handleSubmit} loading={saving} disabled={!productoId || codigos.length === 0}>
+              Cargar {codigos.length > 0 ? `${codigos.length} código(s)` : ''}
+            </Button>
           </>
         }
       >
-        <p className="text-caption cell-muted" style={{ marginTop: 0 }}>
-          Los proveedores (Cine Colombia, Mundo Aventura, Éxito y otros) entregarán un archivo XML con la información de
-          los bonos/boletas. Por ahora esta carga es solo una simulación visual — no se procesa el contenido.
-        </p>
+        <Alert tone="info" title="Sin formato de Excel/XML definido todavía">
+          El backend actual no tiene un parser de archivo definido — pega aquí los códigos exactamente como vienen de la fuente,
+          uno por línea. No se genera ni prefija ningún código.
+        </Alert>
         <Field label="Convenio">
-          <Select value={proveedorId} onChange={(e) => handleProveedorChange(e.target.value)}>
-            {getProveedores().map((p) => (
-              <option key={p.id} value={p.id}>{p.nombre}</option>
+          <Select value={convenioId} onChange={(e) => handleConvenioChange(e.target.value)}>
+            {convenios.map((c) => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </Select>
         </Field>
@@ -224,31 +196,12 @@ export default function Storage() {
             )}
           </Select>
         </Field>
-        {!xmlFile ? (
-          <FileUploader
-            label="Arrastra aquí el archivo XML"
-            hint="o Seleccionar archivo · solo .xml"
-            accept=".xml"
-            onFile={handleFile}
-          />
-        ) : (
-          <div className="table-card" style={{ padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{xmlFile.name}</div>
-              <div className="text-caption">Archivo seleccionado</div>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              icon={<IconClose size={14} color="#1F2937" />}
-              onClick={() => setXmlFile(null)}
-              disabled={saving}
-            >
-              Quitar
-            </Button>
-          </div>
-        )}
+        <Field label="Fecha de vencimiento" optional>
+          <Input type="date" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} />
+        </Field>
+        <Field label="Códigos (uno por línea)">
+          <Textarea rows={6} value={codigosTexto} onChange={(e) => setCodigosTexto(e.target.value)} placeholder={'ABC-001\nABC-002\nABC-003'} />
+        </Field>
       </Modal>
     </div>
   );

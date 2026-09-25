@@ -34,7 +34,11 @@ export function AffiliateAuthProvider({ children }) {
       .miCupo()
       .then((c) => setCupo(c))
       .catch((err) => {
-        if (!(err instanceof ApiError && err.status === 404)) {
+        // 404 = sin cupo asignado; 501 = el backend actual no expone un
+        // endpoint para que el propio afiliado consulte su cupo (ver
+        // services/cuposService.js) — ninguno de los dos es un error real
+        // que valga la pena registrar en consola.
+        if (!(err instanceof ApiError && (err.status === 404 || err.status === 501))) {
           // eslint-disable-next-line no-console
           console.error('No se pudo cargar el cupo del afiliado', err);
         }

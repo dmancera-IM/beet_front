@@ -31,7 +31,7 @@ export default function Configuracion() {
   const [logo, setLogoState] = useState(() => getLogo(cooperativaId));
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
-  const [cuentaPago, setCuentaPagoState] = useState(() => getCuentaPago(cooperativaId));
+  const [cuentaPago, setCuentaPagoState] = useState(null);
   const [editandoPago, setEditandoPago] = useState(false);
   const [formPago, setFormPago] = useState({ proveedor: PROVEEDORES_PAGO[0], ultimosDigitos: '' });
   const [errorPago, setErrorPago] = useState('');
@@ -39,21 +39,27 @@ export default function Configuracion() {
   const readOnly = !permissions.write;
 
   const cargar = useCallback(() => {
+    if (!cooperativaId) return;
     setLoading(true);
     setError(null);
     adminService
-      .obtenerCooperativa()
+      .obtenerCooperativa(cooperativaId)
       .then(setCoop)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [cooperativaId]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  useEffect(() => {
+    if (!cooperativaId) return;
+    getCuentaPago(cooperativaId).then(setCuentaPagoState).catch(() => setCuentaPagoState(null));
+  }, [cooperativaId]);
 
   const guardar = async () => {
     setSaving(true);
     try {
-      const actualizado = await adminService.actualizarCooperativa({ nombre: coop.nombre });
+      const actualizado = await adminService.actualizarCooperativa(cooperativaId, { nombre: coop.nombre });
       setCoop(actualizado);
       push({ title: 'Configuración guardada', description: 'Datos de la entidad actualizados.' });
     } catch (err) {
@@ -90,22 +96,26 @@ export default function Configuracion() {
   const abrirFormularioPago = () => {
     setFormPago({
       proveedor: cuentaPago?.proveedor ?? PROVEEDORES_PAGO[0],
-      ultimosDigitos: cuentaPago?.ultimosDigitos ?? '',
+      ultimosDigitos: cuentaPago?.ultimos_digitos ?? cuentaPago?.ultimosDigitos ?? '',
     });
     setErrorPago('');
     setEditandoPago(true);
   };
 
-  const guardarCuentaPago = () => {
+  const guardarCuentaPago = async () => {
     const digitos = formPago.ultimosDigitos.trim();
     if (!/^\d{4}$/.test(digitos)) {
       setErrorPago('Ingresa exactamente 4 dígitos (dato ficticio, no la tarjeta real).');
       return;
     }
-    const cuenta = setCuentaPago(cooperativaId, { proveedor: formPago.proveedor, ultimosDigitos: digitos });
-    setCuentaPagoState(cuenta);
-    setEditandoPago(false);
-    push({ title: 'Cuenta de pago guardada', description: 'Tus afiliados podrán pagar con tarjeta usando esta cuenta.' });
+    try {
+      const cuenta = await setCuentaPago(cooperativaId, { proveedor: formPago.proveedor, ultimosDigitos: digitos });
+      setCuentaPagoState(cuenta);
+      setEditandoPago(false);
+      push({ title: 'Cuenta de pago guardada', description: 'Tus afiliados podrán pagar con tarjeta usando esta cuenta.' });
+    } catch (err) {
+      push({ title: 'No se pudo guardar la cuenta', description: err.message, variant: 'error' });
+    }
   };
 
   if (loading) return <LoadingState title="Cargando configuración desde PostgreSQL…" />;
@@ -181,7 +191,7 @@ export default function Configuracion() {
                 </div>
                 <div>
                   <div className="text-caption" style={{ marginBottom: 4 }}>Cuenta asociada</div>
-                  <div className="text-body" style={{ letterSpacing: 2 }}>•••• •••• •••• {cuentaPago.ultimosDigitos}</div>
+                  <div className="text-body" style={{ letterSpacing: 2 }}>•••• •••• •••• {cuentaPago.ultimos_digitos ?? cuentaPago.ultimosDigitos}</div>
                 </div>
                 <div>
                   <div className="text-caption" style={{ marginBottom: 4 }}>Estado</div>
