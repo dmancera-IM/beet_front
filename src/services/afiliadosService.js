@@ -1,7 +1,7 @@
 // Afiliados reales (beet_backend/app/routers/afiliados.py). Solo ADMIN
 // puede crear/editar (el backend obtiene su cooperativa del JWT, nunca del
 // body); GES/SUPER_ADMIN/LECTOR también pueden listar/consultar.
-import { apiClient, ApiError } from "./apiClient";
+import { apiClient } from "./apiClient";
 
 export async function listarAfiliados({ cooperativaId, estado, q } = {}) {
   const params = new URLSearchParams();
@@ -27,17 +27,32 @@ export function actualizarAfiliado(id, payload) {
   return apiClient.patch(`/afiliados/${id}`, payload, { tokenAudience: "admin" });
 }
 
-// PENDIENTE: el backend real no expone DELETE /afiliados/{id} (tampoco un
-// estado "RETIRADO" alternativo) — usa `actualizarAfiliado(id, {estado:
-// false})` para desactivar.
-export function eliminarAfiliado() {
-  return Promise.reject(new ApiError('Eliminar afiliados no está disponible: usa "Desactivar" en su lugar.', 501, null));
+// Retiro/desactivación funcional: no borra físicamente la fila para no romper
+// historial de transacciones/tickets/cupos. La purga definitiva a 30 días debe
+// hacerse con un job backend separado.
+export function eliminarAfiliado(id) {
+  return actualizarAfiliado(id, { estado: false });
 }
 
-// PENDIENTE: no hay endpoint de carga masiva de afiliados en el backend
-// real (ni un formato de archivo definido) — ver informe de integración.
-export function cargaMasivaAfiliados() {
-  return Promise.reject(new ApiError("La carga masiva de afiliados no está disponible: el backend actual no expone este endpoint.", 501, null));
+// Carga masiva real: el backend (POST /afiliados/carga-masiva) parsea el
+// Excel del lado del servidor y hace upsert por (cooperativa, documento) —
+// el ADMIN autenticado nunca envía cooperativa_id, el backend la toma del
+// JWT. Traduce {creados, actualizados, errores:[{fila, motivo}]} a la forma
+// que ya esperan las pantallas de Afiliados (detail/invalidos/errores como
+// strings).
+export async function cargaMasivaAfiliados(file) {
+  const formData = new FormData();
+  formData.append("archivo", file);
+  const resultado = await apiClient.postForm("/afiliados/carga-masiva", formData, { tokenAudience: "admin" });
+  const invalidos = resultado.errores.length;
+  const detail = `${resultado.creados} creado(s), ${resultado.actualizados} actualizado(s)` + (invalidos ? `, ${invalidos} fila(s) con error.` : ".");
+  return {
+    creados: resultado.creados,
+    actualizados: resultado.actualizados,
+    invalidos,
+    detail,
+    errores: resultado.errores.map((e) => `Fila ${e.fila}: ${e.motivo}`),
+  };
 }
 
 export function miPerfilAfiliado() {

@@ -1,13 +1,17 @@
+import { useState } from 'react';
+
 // ADAPTADO AL BACKEND REAL: `convenios.imagen_url` es una URL pública
 // simple (sin autenticación) — ya no hay una plantilla/logo servida detrás
 // del JWT del afiliado, así que esto ya no necesita descargar un blob
 // autenticado. Cae al placeholder genérico si no hay imagen o si falla la
 // carga, igual que antes.
 export default function ConvenioImagenMarca({ imagenMarcaUrl, nombre, className = '', style }) {
-  if (imagenMarcaUrl) {
+  const [falloImagen, setFalloImagen] = useState(false);
+
+  if (imagenMarcaUrl && !falloImagen) {
     return (
       <div className={`benefit-card-image benefit-card-image--photo ${className}`} style={style}>
-        <img src={imagenMarcaUrl} alt={nombre} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        <img src={imagenMarcaUrl} alt={nombre} onError={() => setFalloImagen(true)} />
       </div>
     );
   }

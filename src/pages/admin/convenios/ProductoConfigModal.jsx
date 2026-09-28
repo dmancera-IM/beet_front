@@ -57,6 +57,7 @@ export default function ProductoConfigModal({ open, productoId, convenioId, conv
   }, [open, productoId, push]);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const setBool = (key) => () => setForm((f) => ({ ...f, [key]: !f[key] }));
 
   // El sistema calcula el precio para el afiliado — nunca se escribe a
   // mano (sección 3): precio_afiliado = precio_ges_entidad × (1 +
@@ -169,6 +170,15 @@ export default function ProductoConfigModal({ open, productoId, convenioId, conv
           <Field label="Descripción">
             <Textarea value={form.descripcion} onChange={set('descripcion')} placeholder="Válido de lunes a viernes." />
           </Field>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 14 }}>
+            <div>
+              <div className="text-label">Producto activo para afiliados</div>
+              <p className="text-caption cell-muted" style={{ margin: '4px 0 0' }}>
+                Debe estar activo para que el convenio pueda activarse y el producto aparezca en el catálogo.
+              </p>
+            </div>
+            <Switch label={form.activo ? 'Activo' : 'Inactivo'} checked={form.activo} onChange={setBool('activo')} />
+          </div>
         </form>
       )}
     </Modal>

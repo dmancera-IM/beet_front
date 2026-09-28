@@ -65,8 +65,7 @@ export default function ConvenioDetailAdmin() {
     if (!convenio) return;
     const nuevoEstado = !convenio.estado;
     if (nuevoEstado && !convenio.puede_activarse) {
-      push({ title: 'Faltan datos para activar', description: 'Configura el porcentaje y al menos un producto activo con precio público.', variant: 'error' });
-      return;
+      push({ title: 'Intentando activar', description: 'El backend validará y mostrará el motivo exacto si aún falta algo.' });
     }
     setSavingEstado(true);
     try {
@@ -97,7 +96,7 @@ export default function ConvenioDetailAdmin() {
               label={convenio.estado ? 'Activo' : 'Inactivo'}
               checked={convenio.estado}
               onChange={toggleEstado}
-              disabled={savingEstado || (!convenio.estado && !convenio.puede_activarse)}
+              disabled={savingEstado}
               title={!convenio.estado && !convenio.puede_activarse ? 'Configura porcentaje y al menos un producto antes de activar' : undefined}
             />
           </PermissionGate>

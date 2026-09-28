@@ -30,6 +30,7 @@ function buildNav(role, roles) {
     return [
       { to: base, label: 'Dashboard', icon: IconDashboard, end: true },
       { to: `${base}/cooperativas`, label: 'Entidades', icon: IconAfiliados },
+      { to: `${base}/usuarios`, label: 'Usuarios', icon: IconUsers },
       { to: `${base}/storage`, label: 'Storage', icon: IconInventario },
       { to: `${base}/convenios`, label: 'Convenios', icon: IconConvenios },
       { to: `${base}/compras`, label: 'Carga de bonos y boletas', icon: IconPlus },

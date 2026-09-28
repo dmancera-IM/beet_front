@@ -7,14 +7,11 @@ import Alert from '../../components/ui/Alert';
 import { useAffiliateAuth } from '../../context/AffiliateAuthContext';
 import { useToast } from '../../context/ToastContext';
 
-// The backend identifies the roster row an admin already loaded by
-// documento AND correo together (documento alone is only unique PER
-// cooperativa, not globally — see backend/app/routers/auth_afiliado.py),
-// so both fields are required here. It deliberately does not expose a
-// separate "does this documento exist?" lookup (that would let anyone
-// enumerate the affiliate roster) — any mismatch (wrong documento, wrong
-// correo, already-claimed account, inactive affiliate) fails with the
-// same generic error.
+// Activación SOLO por documento (regla de negocio actual): el correo puede
+// cambiar, el documento es el dato estable — ver
+// beet_backend/app/services/auth_service.py:activar_cuenta_afiliado. El
+// backend rechaza con un error claro si el documento no existe o si la
+// cuenta ya fue activada antes (no permite "reactivar"/sobreescribir).
 //
 // `acepta_terminos` has no backend column to receive it — there is no
 // legal-acceptance-tracking column on `afiliados` in the real schema — so
@@ -25,7 +22,6 @@ export default function PortalRegister() {
   const { push } = useToast();
   const navigate = useNavigate();
   const [documento, setDocumento] = useState('');
-  const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
@@ -38,8 +34,7 @@ export default function PortalRegister() {
     setError('');
     const nextErrors = {};
     if (!documento.trim()) nextErrors.documento = 'El número de documento es obligatorio.';
-    if (!correo.trim()) nextErrors.correo = 'El correo es obligatorio.';
-    if (password.length < 6) nextErrors.password = 'La contraseña debe tener al menos 6 caracteres.';
+    if (password.length < 8) nextErrors.password = 'La contraseña debe tener al menos 8 caracteres.';
     if (password !== confirm) nextErrors.confirm = 'Las contraseñas no coinciden.';
     if (!aceptaTerminos) nextErrors.terminos = 'Debes aceptar los términos y condiciones para continuar.';
     setErrors(nextErrors);
@@ -47,14 +42,12 @@ export default function PortalRegister() {
 
     setSubmitting(true);
     try {
-      await registro(documento.trim(), correo.trim(), password, confirm);
+      await registro(documento.trim(), password, confirm);
       push({ title: 'Cuenta activada', description: 'Ya puedes iniciar sesión con tu nueva contraseña.' });
       navigate('/portal/login');
     } catch (err) {
-      // The backend returns the same generic error whether the documento
-      // doesn't exist, the correo doesn't match it, the account is already
-      // claimed, or the affiliate isn't active — by design, to avoid
-      // revealing which affiliates are registered.
+      // El backend responde con un error claro: documento no encontrado,
+      // cuenta ya activada, o documento repetido en más de una entidad.
       setError(err.message || 'No fue posible activar la cuenta.');
     } finally {
       setSubmitting(false);
@@ -73,7 +66,7 @@ export default function PortalRegister() {
         </button>
         <img src={logo} alt="BEET Ticket" height={52} style={{ marginBottom: 28 }} />
         <h1 className="text-h2" style={{ margin: '0 0 6px' }}>Activa tu cuenta</h1>
-        <p className="text-small" style={{ margin: '0 0 26px' }}>Tu entidad ya te registró con tu número de documento y correo — solo falta que definas tu contraseña.</p>
+        <p className="text-small" style={{ margin: '0 0 26px' }}>Tu entidad ya te registró con tu número de documento — solo falta que definas tu contraseña.</p>
 
         {error && (
           <div style={{ marginBottom: 18 }}>
@@ -85,11 +78,8 @@ export default function PortalRegister() {
           <Field label="Número de documento" error={errors.documento}>
             <Input type="text" inputMode="numeric" placeholder="Ej. 52114908" value={documento} onChange={(e) => setDocumento(e.target.value)} />
           </Field>
-          <Field label="Correo" error={errors.correo}>
-            <Input type="email" placeholder="tucorreo@ejemplo.com" value={correo} onChange={(e) => setCorreo(e.target.value)} />
-          </Field>
           <Field label="Contraseña" error={errors.password}>
-            <Input type="password" placeholder="Mínimo 6 caracteres" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input type="password" placeholder="Mínimo 8 caracteres" value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
           <Field label="Confirmar contraseña" error={errors.confirm}>
             <Input type="password" placeholder="Repite tu contraseña" value={confirm} onChange={(e) => setConfirm(e.target.value)} />

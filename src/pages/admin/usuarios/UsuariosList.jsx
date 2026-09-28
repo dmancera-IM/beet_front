@@ -13,17 +13,24 @@ import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/Sta
 import { RequireUserManagement } from '../../../components/ui/PermissionGate';
 import * as adminService from '../../../services/adminService';
 import { ApiError } from '../../../services/apiClient';
-import { ROLES_BACKEND, ROLES_DISPLAY } from '../../../utils/roles';
+import { ROLES_DISPLAY } from '../../../utils/roles';
 import { useToast } from '../../../context/ToastContext';
 import { useCooperativa } from '../../../context/CooperativaContext';
+import { useAuth } from '../../../context/AuthContext';
 
-const emptyDraft = { nombre: '', correo: '', password: '', rol: 'LECTOR', cooperativa_id: '' };
+// GES/SUPER_ADMIN SOLO pueden crear usuarios ADMIN (el backend lo exige —
+// ver usuarios_service.crear: "GES/SUPER_ADMIN solo pueden crear usuarios
+// ADMIN"), nunca SUPER_ADMIN/GES/LECTOR desde esta pantalla — por eso el
+// rol ya no es un selector, siempre crea un ADMIN con su propia entidad.
+const emptyDraft = { nombre: '', correo: '', password: '', cooperativa_id: '' };
 const emptyCoopDraft = { nombre: '', nit: '' };
 
 export default function UsuariosList() {
   useSetBreadcrumbs([{ label: 'Usuarios' }]);
   const { push } = useToast();
   const { recargarCooperativas } = useCooperativa();
+  const { role, roles } = useAuth();
+  const esGes = role === roles.GES;
 
   const [usuarios, setUsuarios] = useState([]);
   const [cooperativas, setCooperativas] = useState([]);
@@ -99,10 +106,7 @@ export default function UsuariosList() {
     if (!draft.nombre.trim()) nextErrors.nombre = 'El nombre es obligatorio.';
     if (!draft.correo.trim()) nextErrors.correo = 'El correo es obligatorio.';
     if (draft.password.length < 8) nextErrors.password = 'Mínimo 8 caracteres.';
-    // cooperativa_id is required for every role except SUPER_ADMIN and GES,
-    // neither of which belongs to a single cooperativa (ver secciones 26-27
-    // de la definición funcional).
-    if (draft.rol !== 'SUPER_ADMIN' && draft.rol !== 'GES' && !draft.cooperativa_id) nextErrors.cooperativa_id = 'Selecciona la entidad de este usuario.';
+    if (!draft.cooperativa_id) nextErrors.cooperativa_id = 'Selecciona la entidad de este usuario.';
     setDraftErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
@@ -112,10 +116,10 @@ export default function UsuariosList() {
         nombre: draft.nombre.trim(),
         correo: draft.correo.trim(),
         password: draft.password,
-        rol: draft.rol,
-        cooperativa_id: draft.cooperativa_id ? Number(draft.cooperativa_id) : null,
+        rol: 'ADMIN',
+        cooperativa_id: Number(draft.cooperativa_id),
       });
-      push({ title: 'Usuario creado', description: `${draft.nombre} · ${ROLES_DISPLAY[draft.rol]}` });
+      push({ title: 'Usuario creado', description: `${draft.nombre} · ${ROLES_DISPLAY.ADMIN}` });
       setFormOpen(false);
       setDraft(emptyDraft);
       cargar();
@@ -152,21 +156,14 @@ export default function UsuariosList() {
     const objetivo = deleteTarget;
     setDeleting(true);
     try {
-      // Real DELETE — the row is actually removed from usuarios_admin in
-      // PostgreSQL (see DELETE /api/admin/usuarios/{id}). On success the
-      // row is dropped from local state directly (no reload()), then
-      // cargar() re-syncs with the server as a belt-and-suspenders check.
       await adminService.eliminarUsuarioAdmin(objetivo.id);
-      setUsuarios((prev) => prev.filter((u) => u.id !== objetivo.id));
-      push({ title: 'Usuario eliminado', description: objetivo.nombre, variant: 'success' });
+      setUsuarios((prev) => prev.map((u) => (u.id === objetivo.id ? { ...u, estado: false } : u)));
+      push({ title: 'Usuario desactivado', description: `${objetivo.nombre} ya no puede acceder.`, variant: 'success' });
       setDeleteTarget(null);
       setOpenMenuId(null);
       cargar();
     } catch (err) {
-      // Deliberately does NOT touch `usuarios` state — a failed DELETE
-      // must never make the user disappear visually while the row is
-      // still in PostgreSQL.
-      push({ title: 'No se pudo eliminar el usuario', description: err.message, variant: 'error' });
+      push({ title: 'No se pudo desactivar el usuario', description: err.message, variant: 'error' });
     } finally {
       setDeleting(false);
     }
@@ -181,7 +178,9 @@ export default function UsuariosList() {
             <p className="page-subtitle">Usuarios internos con acceso al panel administrativo, bajo los roles Súper administrador, Administrador y Lector.</p>
           </div>
           <div className="page-header-actions">
-            <Button variant="secondary" icon={<IconPlus color="#1F2937" />} onClick={() => setCoopFormOpen(true)}>Crear entidad</Button>
+            {!esGes && (
+              <Button variant="secondary" icon={<IconPlus color="#1F2937" />} onClick={() => setCoopFormOpen(true)}>Crear entidad</Button>
+            )}
             <Button icon={<IconPlus color="#fff" />} onClick={() => setFormOpen(true)}>Crear usuario</Button>
           </div>
         </div>
@@ -259,7 +258,7 @@ export default function UsuariosList() {
                           items={[
                             { label: u.estado ? 'Desactivar acceso' : 'Reactivar acceso', onClick: () => toggleEstado(u) },
                             { divider: true },
-                            { label: 'Eliminar usuario', danger: true, onClick: () => setDeleteTarget(u) },
+                            { label: 'Desactivar usuario', danger: true, onClick: () => setDeleteTarget(u) },
                           ]}
                         />
                       </td>
@@ -274,7 +273,7 @@ export default function UsuariosList() {
         <Modal
           open={formOpen}
           onClose={() => !saving && setFormOpen(false)}
-          title="Crear usuario administrador"
+          title="Crear administrador de entidad"
           actions={
             <>
               <Button variant="secondary" onClick={() => setFormOpen(false)} disabled={saving}>Cancelar</Button>
@@ -291,27 +290,17 @@ export default function UsuariosList() {
           <Field label="Contraseña temporal" error={draftErrors.password} hint="Mínimo 8 caracteres. Compártela por un canal seguro.">
             <Input type="password" value={draft.password} onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))} />
           </Field>
-          <Field label="Rol" hint="Define qué puede hacer este usuario dentro del panel administrativo.">
-            <Select value={draft.rol} onChange={(e) => setDraft((d) => ({ ...d, rol: e.target.value, cooperativa_id: (e.target.value === 'SUPER_ADMIN' || e.target.value === 'GES') ? '' : d.cooperativa_id }))}>
-              {Object.keys(ROLES_BACKEND).map((display) => (
-                <option key={display} value={ROLES_BACKEND[display]}>{display}</option>
+          <p className="text-caption cell-muted" style={{ marginTop: -4 }}>
+            Rol: <strong>Administrador</strong> — {esGes ? 'GES' : 'Súper administrador'} solo puede crear administradores de entidad. Para crear un usuario Lector, el propio administrador de la entidad lo hace desde su panel.
+          </p>
+          <Field label="Entidad" error={draftErrors.cooperativa_id} hint="A qué entidad pertenece este administrador. Solo podrá ver y gestionar los datos de esta entidad.">
+            <Select value={draft.cooperativa_id} onChange={(e) => setDraft((d) => ({ ...d, cooperativa_id: e.target.value }))}>
+              <option value="">Selecciona una entidad…</option>
+              {cooperativas.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
               ))}
             </Select>
           </Field>
-          {draft.rol === 'SUPER_ADMIN' ? (
-            <p className="text-caption cell-muted">Un súper administrador no pertenece a una entidad en particular — administra todas.</p>
-          ) : draft.rol === 'GES' ? (
-            <p className="text-caption cell-muted">GES no pertenece a ninguna entidad — administra el Storage central.</p>
-          ) : (
-            <Field label="Entidad" error={draftErrors.cooperativa_id} hint="A qué entidad pertenece este usuario. Solo podrá ver y gestionar los datos de esta entidad.">
-              <Select value={draft.cooperativa_id} onChange={(e) => setDraft((d) => ({ ...d, cooperativa_id: e.target.value }))}>
-                <option value="">Selecciona una entidad…</option>
-                {cooperativas.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))}
-              </Select>
-            </Field>
-          )}
         </Modal>
 
         <Modal
@@ -336,9 +325,9 @@ export default function UsuariosList() {
         <ConfirmDialog
           open={!!deleteTarget}
           onClose={() => setDeleteTarget(null)}
-          title={deleteTarget ? `¿Eliminar a ${deleteTarget.nombre}?` : ''}
-          description="Esta acción borra el usuario de forma permanente y no se puede deshacer. Si solo quieres revocarle el acceso sin perder el registro, usa “Desactivar acceso” en su lugar."
-          confirmLabel="Eliminar usuario"
+          title={deleteTarget ? `¿Desactivar a ${deleteTarget.nombre}?` : ''}
+          description="El usuario ya no podrá ingresar al panel. Se conserva el historial asociado; la eliminación definitiva a 30 días debe hacerla un proceso programado del backend."
+          confirmLabel="Desactivar usuario"
           onConfirm={eliminarUsuario}
           loading={deleting}
         />

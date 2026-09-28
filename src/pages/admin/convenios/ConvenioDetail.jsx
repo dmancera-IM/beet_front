@@ -32,7 +32,7 @@ export default function ConvenioDetail() {
   const [error, setError] = useState(null);
 
   const [formOpen, setFormOpen] = useState(false);
-  const [draft, setDraft] = useState({ nombre: '', descripcion: '', precio_venta_entidad: '' });
+  const [draft, setDraft] = useState({ nombre: '', precio_venta_entidad: '' });
   const [saving, setSaving] = useState(false);
 
   useSetBreadcrumbs([
@@ -62,12 +62,11 @@ export default function ConvenioDetail() {
       await convenioService.crearProducto({
         id_convenio: convenio.id,
         nombre: draft.nombre.trim(),
-        descripcion: draft.descripcion.trim() || null,
         precio_venta_entidad: draft.precio_venta_entidad ? Number(draft.precio_venta_entidad) : null,
       });
       push({ title: 'Producto creado', description: draft.nombre });
       setFormOpen(false);
-      setDraft({ nombre: '', descripcion: '', precio_venta_entidad: '' });
+      setDraft({ nombre: '', precio_venta_entidad: '' });
       cargar();
     } catch (err) {
       push({ title: 'No se pudo crear el producto', description: err.message, variant: 'error' });
@@ -162,9 +161,6 @@ export default function ConvenioDetail() {
       >
         <Field label="Nombre">
           <Input value={draft.nombre} onChange={(e) => setDraft((d) => ({ ...d, nombre: e.target.value }))} placeholder="Entrada 2D" />
-        </Field>
-        <Field label="Descripción" optional>
-          <Input value={draft.descripcion} onChange={(e) => setDraft((d) => ({ ...d, descripcion: e.target.value }))} />
         </Field>
         <Field label="Precio de venta a la entidad" optional hint="Un producto solo puede activarse una vez tenga precio configurado.">
           <Input type="number" min="0" value={draft.precio_venta_entidad} onChange={(e) => setDraft((d) => ({ ...d, precio_venta_entidad: e.target.value }))} placeholder="4500" />

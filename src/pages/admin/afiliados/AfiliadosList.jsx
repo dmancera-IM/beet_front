@@ -279,11 +279,11 @@ export default function AfiliadosList() {
         title="Cargar base de afiliados"
         actions={<Button variant="secondary" onClick={() => { setUploadOpen(false); setUploadResult(null); }} disabled={uploading}>Cerrar</Button>}
       >
-        <p style={{ marginTop: 0 }}>Archivo Excel o CSV con columnas: documento, nombres, apellidos, correo, telefono, cupo_total, estado. Es un upsert: actualiza por documento si ya existe. Se envía a <code>POST /api/afiliados/carga-masiva</code>.</p>
+        <p style={{ marginTop: 0 }}>Archivo Excel (.xlsx) con columnas: documento, nombres, apellidos, correo, telefono, cupo_total. Es un upsert: si el documento ya existe en la entidad, se actualiza; si no, se crea (siempre activo). Solo ADMIN de la entidad puede cargar — un súper administrador debe usar la sesión de un ADMIN para esto.</p>
         {isSuperAdmin && selected && (
           <p className="text-caption" style={{ marginTop: -8, marginBottom: 12 }}>Estás gestionando datos de: <strong>{selected.nombre}</strong></p>
         )}
-        <FileUploader hint="Excel o CSV · máx. 10 MB" onFile={handleUpload} />
+        <FileUploader accept=".xlsx" hint="Excel (.xlsx)" onFile={handleUpload} />
         {uploading && <LoadingState title="Procesando archivo en el backend…" />}
         {!uploading && uploadResult && (
           <div style={{ marginTop: 16 }}>

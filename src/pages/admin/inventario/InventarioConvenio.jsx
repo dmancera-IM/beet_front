@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card } from '../../../components/ui/Card';
-import { Tabs } from '../../../components/ui/Nav';
+import { Pagination, Tabs } from '../../../components/ui/Nav';
 import { StatusBadge } from '../../../components/ui/Badge';
 import { Field, Select } from '../../../components/ui/Field';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
@@ -41,6 +41,7 @@ export default function InventarioConvenio() {
   const [unidades, setUnidades] = useState([]);
   const [loadingUnidades, setLoadingUnidades] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
 
   useSetBreadcrumbs([
     { label: 'Inventario', to: `${base}/inventario` },
@@ -69,7 +70,7 @@ export default function InventarioConvenio() {
     setError(null);
     inventarioService
       .listarInventario({ cooperativaId: selectedId || undefined, idProducto: productoId, estado: tab || undefined })
-      .then(setUnidades)
+      .then((rows) => { setUnidades(rows); setPage(1); })
       .catch((err) => setError(err.message))
       .finally(() => setLoadingUnidades(false));
   }, [productoId, tab, selectedId]);
@@ -80,6 +81,9 @@ export default function InventarioConvenio() {
   if (!convenio) {
     return <EmptyState title="Convenio no encontrado" actionLabel="Volver a inventario" onAction={() => navigate(`${base}/inventario`)} />;
   }
+  const totalPages = Math.max(1, Math.ceil(unidades.length / 20));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = unidades.slice((currentPage - 1) * 20, currentPage * 20);
 
   return (
     <div>
@@ -125,7 +129,7 @@ export default function InventarioConvenio() {
                   </tr>
                 </thead>
                 <tbody>
-                  {unidades.map((u) => (
+                  {pageRows.map((u) => (
                     <tr key={u.id}>
                       <td className="text-mono">{u.codigo}</td>
                       <td><StatusBadge status={u.estado} /></td>
@@ -134,6 +138,7 @@ export default function InventarioConvenio() {
                   ))}
                 </tbody>
               </table>
+              <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${unidades.length} unidades`} />
             </div>
           )}
         </div>

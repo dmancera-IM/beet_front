@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { Card, ProgressStatCard } from '../../../components/ui/Card';
-import { StatusBadge } from '../../../components/ui/Badge';
+import { Badge, StatusBadge } from '../../../components/ui/Badge';
 import Avatar from '../../../components/ui/Avatar';
 import Button from '../../../components/ui/Button';
 import { Tabs } from '../../../components/ui/Nav';
@@ -94,7 +94,7 @@ export default function AfiliadoDetailAdmin() {
     setDeleting(true);
     try {
       await afiliadosService.eliminarAfiliado(afiliado.id);
-      push({ title: 'Afiliado eliminado', description: nombreCompleto, variant: 'error' });
+      push({ title: 'Afiliado desactivado', description: `${nombreCompleto} ya no puede acceder. Se eliminará completamente después de 3 meses.`, variant: 'success' });
       navigate(`${base}/afiliados`);
     } catch (err) {
       push({ title: 'No se pudo eliminar el afiliado', description: err.message, variant: 'error' });
@@ -117,8 +117,9 @@ export default function AfiliadoDetailAdmin() {
         </div>
         <div className="page-header-actions">
           <StatusBadge status={afiliado.estado} />
+          {afiliado.cuenta_activada ? <Badge tone="green" dot>Cuenta activada</Badge> : <Badge tone="amber">Cuenta pendiente</Badge>}
           <PermissionGate>
-            <Button variant="secondary" onClick={() => setDeleteOpen(true)}>Eliminar afiliado</Button>
+            <Button variant="secondary" onClick={() => setDeleteOpen(true)}>Desactivar afiliado</Button>
           </PermissionGate>
         </div>
       </div>
@@ -186,9 +187,9 @@ export default function AfiliadoDetailAdmin() {
       <ConfirmDialog
         open={deleteOpen}
         onClose={() => !deleting && setDeleteOpen(false)}
-        title={`¿Eliminar a ${nombreCompleto}?`}
-        description="Esta acción elimina permanentemente al afiliado de tu entidad. Puedes cancelar sin eliminar nada."
-        confirmLabel="Confirmar eliminación"
+        title={`¿Desactivar a ${nombreCompleto}?`}
+        description="El afiliado ya no podrá acceder al portal y su cuenta quedará pendiente de nueva activación. Se eliminará completamente después de 3 meses mediante un proceso programado del backend."
+        confirmLabel="Desactivar afiliado"
         loading={deleting}
         onConfirm={eliminarAfiliado}
       />

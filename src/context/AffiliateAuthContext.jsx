@@ -79,8 +79,8 @@ export function AffiliateAuthProvider({ children }) {
   }, [refrescarCupo]);
 
   const registro = useCallback(
-    (documento, correo, password, confirmarPassword) =>
-      authService.afiliadoRegistro(documento, correo, password, confirmarPassword), // returns a Message; no token — the affiliate still has to log in afterward
+    (documento, password, confirmarPassword) =>
+      authService.afiliadoRegistro(documento, password, confirmarPassword), // returns a Message; no token — the affiliate still has to log in afterward
     []
   );
 

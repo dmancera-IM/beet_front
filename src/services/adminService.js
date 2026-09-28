@@ -7,7 +7,7 @@
 // param (see beet_backend/app/dependencies/scope.py). Passing
 // `cooperativaId` here for a SUPER_ADMIN/GES is what lets them pick which
 // cooperativa an operation applies to.
-import { apiClient, ApiError } from "./apiClient";
+import { apiClient } from "./apiClient";
 
 // ---- Usuarios administrativos (GET/POST/PATCH /usuarios) -------------------
 //
@@ -59,14 +59,9 @@ export function actualizarUsuarioAdmin(id, payload) {
   return apiClient.patch(`/usuarios/${id}`, { nombre, estado, password }, { tokenAudience: "admin" });
 }
 
-// PENDIENTE: el backend real no expone DELETE /usuarios/{id} (decisión
-// documentada: borrar un usuario rompería el historial de
-// solicitudes_compra.id_usuario). Usa `actualizarUsuarioAdmin(id, {estado:
-// false})` para revocar el acceso en su lugar.
-export function eliminarUsuarioAdmin() {
-  return Promise.reject(
-    new ApiError("Eliminar usuarios no está disponible: el backend actual no expone este endpoint. Usa \"Desactivar acceso\".", 501, null)
-  );
+// Desactiva el acceso sin borrar físicamente el usuario, preservando historial.
+export function eliminarUsuarioAdmin(id) {
+  return actualizarUsuarioAdmin(id, { estado: false });
 }
 
 // ---- Cooperativas (GET/POST/PATCH /cooperativas) ----------------------------

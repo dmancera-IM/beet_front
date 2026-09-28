@@ -14,6 +14,17 @@ export function previsualizarCatalogoPlantilla(clave) {
   return Promise.resolve(blobDePlantilla({ tipo: "catalogo", clave }));
 }
 
+// API directa por convenio (GET/PATCH /convenios/{id}/plantilla-pdf) — una
+// sola plantilla por convenio, la misma para todos sus productos. Usada
+// por la pantalla real de Configuración de GES.
+export function obtenerPlantillaConvenio(convenioId) {
+  return apiClient.get(`/convenios/${convenioId}/plantilla-pdf`, { tokenAudience: "admin" });
+}
+
+export function configurarPlantillaConvenio(convenioId, { nombre, archivo_url, estado } = {}) {
+  return apiClient.patch(`/convenios/${convenioId}/plantilla-pdf`, { nombre, archivo_url, estado }, { tokenAudience: "admin" });
+}
+
 export async function listarPlantillasDisponibles(convenioId) {
   const plantilla = await apiClient.get(`/convenios/${convenioId}/plantilla-pdf`, { tokenAudience: "admin" });
   if (!plantilla) return [];

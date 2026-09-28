@@ -5,7 +5,7 @@ import Button from '../../../components/ui/Button';
 import { Field, Input, Select } from '../../../components/ui/Field';
 import { IconBuscar, IconDescargar, IconPlus, IconUpload } from '../../../components/ui/Icons';
 import { Pagination, Dropdown } from '../../../components/ui/Nav';
-import { StatusBadge } from '../../../components/ui/Badge';
+import { Badge, StatusBadge } from '../../../components/ui/Badge';
 import Avatar from '../../../components/ui/Avatar';
 import { EmptyState, ErrorState, LoadingState } from '../../../components/ui/States';
 import Modal, { ConfirmDialog } from '../../../components/ui/Modal';
@@ -175,7 +175,7 @@ export default function AfiliadosListAdmin() {
     setDeleting(true);
     try {
       await afiliadosService.eliminarAfiliado(deleteTarget.id);
-      push({ title: 'Afiliado eliminado', description: `${deleteTarget.nombres} ${deleteTarget.apellidos}`, variant: 'error' });
+      push({ title: 'Afiliado desactivado', description: `${deleteTarget.nombres} ${deleteTarget.apellidos} ya no puede acceder. Se eliminará completamente después de 3 meses.`, variant: 'success' });
       setDeleteTarget(null);
       cargar();
     } catch (err) {
@@ -238,6 +238,7 @@ export default function AfiliadosListAdmin() {
                   <th>Consumo</th>
                   <th className="right">Cupo disponible</th>
                   <th>Estado</th>
+                  <th>Cuenta</th>
                   <th></th>
                 </tr>
               </thead>
@@ -271,6 +272,7 @@ export default function AfiliadosListAdmin() {
                         <td colSpan={3} className="text-small cell-muted">Sin cupo asignado</td>
                       )}
                       <td><StatusBadge status={a.estado} /></td>
+                      <td>{a.cuenta_activada ? <Badge tone="green" dot>Activada</Badge> : <Badge tone="amber">Pendiente</Badge>}</td>
                       <td className="right" style={{ position: 'relative' }}>
                         <PermissionGate fallback={<Link to={`${base}/afiliados/${a.id}`} style={{ fontSize: 13, fontWeight: 600 }}>Ver</Link>}>
                           <Button size="sm" variant="secondary" onClick={() => setOpenMenuId(openMenuId === a.id ? null : a.id)}>Gestionar</Button>
@@ -282,7 +284,7 @@ export default function AfiliadosListAdmin() {
                               { label: 'Ver detalle', onClick: () => { setOpenMenuId(null); navigate(`${base}/afiliados/${a.id}`); } },
                               { label: a.cupo ? 'Editar cupo' : 'Asignar cupo', onClick: () => { setCupoTarget(a); setOpenMenuId(null); } },
                               { divider: true },
-                              { label: 'Eliminar afiliado', danger: true, onClick: () => { setDeleteTarget(a); setOpenMenuId(null); } },
+                              { label: 'Desactivar afiliado', danger: true, onClick: () => { setDeleteTarget(a); setOpenMenuId(null); } },
                             ]}
                           />
                         </PermissionGate>
@@ -306,8 +308,8 @@ export default function AfiliadosListAdmin() {
         title="Cargar base de afiliados"
         actions={<Button variant="secondary" onClick={() => { setUploadOpen(false); setUploadResult(null); }} disabled={uploading}>Cerrar</Button>}
       >
-        <p style={{ marginTop: 0 }}>Archivo Excel o CSV con columnas: documento, nombres, apellidos, correo, telefono, cupo_total, estado. Es un upsert: actualiza por documento si ya existe.</p>
-        <FileUploader hint="Excel o CSV · máx. 10 MB" onFile={handleUpload} />
+        <p style={{ marginTop: 0 }}>Archivo Excel (.xlsx) con columnas: documento, nombres, apellidos, correo, telefono, cupo_total. Es un upsert: si el documento ya existe en tu entidad, se actualiza; si no, se crea pendiente de activación.</p>
+        <FileUploader accept=".xlsx" hint="Excel (.xlsx)" onFile={handleUpload} />
         {uploading && <LoadingState title="Procesando archivo…" />}
         {!uploading && uploadResult && (
           <div style={{ marginTop: 16 }}>
@@ -366,9 +368,9 @@ export default function AfiliadosListAdmin() {
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => !deleting && setDeleteTarget(null)}
-        title={deleteTarget ? `¿Eliminar a ${deleteTarget.nombres} ${deleteTarget.apellidos}?` : ''}
-        description="Esta acción elimina permanentemente al afiliado de tu entidad. Puedes cancelar sin eliminar nada."
-        confirmLabel="Confirmar eliminación"
+        title={deleteTarget ? `¿Desactivar a ${deleteTarget.nombres} ${deleteTarget.apellidos}?` : ''}
+        description="El afiliado ya no podrá acceder al portal y su cuenta quedará pendiente de nueva activación. Se eliminará completamente después de 3 meses mediante un proceso programado del backend."
+        confirmLabel="Desactivar afiliado"
         loading={deleting}
         onConfirm={eliminarAfiliado}
       />

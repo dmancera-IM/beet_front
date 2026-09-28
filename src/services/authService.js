@@ -48,13 +48,13 @@ export function getAfiliadoMe() {
 }
 
 // Activación real de cuenta: la cooperativa ya creó la fila del afiliado
-// (sin password_hash); esto valida documento+correo contra esa fila y fija
-// su contraseña — equivalente real al "registro" que la UI ya tenía.
-export function afiliadoRegistro(documento, correo, password, confirmar_password) {
+// (sin password_hash) — SOLO por documento, el correo puede cambiar y ya
+// no se valida aquí (ver auth_service.activar_cuenta_afiliado en backend).
+export function afiliadoRegistro(documento, password, confirmar_password) {
   if (password !== confirmar_password) {
     return Promise.reject(new ApiError("Las contraseñas no coinciden.", 422, "Las contraseñas no coinciden."));
   }
-  return apiClient.post("/auth/afiliado/activar-cuenta", { documento, correo, password });
+  return apiClient.post("/auth/afiliado/activar-cuenta", { documento, password });
 }
 
 export function afiliadoForgotPassword() {

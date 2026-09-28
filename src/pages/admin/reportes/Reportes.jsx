@@ -31,17 +31,19 @@ export default function Reportes() {
     setError(null);
     Promise.all([
       dashboardService.obtenerDashboardStats(),
-      reportesService.obtenerRendimientoConvenios(),
-      convenioService.listarConvenios({ pageSize: 100 }),
+      reportesService.obtenerRendimientoConvenios({ metodoPago: filtros.metodoPago || undefined }),
+      convenioService.listarConvenios(),
     ])
       .then(([s, r, c]) => {
         setStats(s);
         setRendimiento(r);
-        setConvenios(c.items);
+        // convenioService.listarConvenios() devuelve directamente un array
+        // (GET /convenios) — nunca un objeto paginado con `.items`.
+        setConvenios(c);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [necesitaSeleccion]);
+  }, [necesitaSeleccion, filtros.metodoPago]);
 
   useEffect(() => { cargar(); }, [cargar, selectedId]);
 

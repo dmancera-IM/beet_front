@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSetBreadcrumbs } from '../../../components/layout/breadcrumbs';
 import { KpiCard } from '../../../components/ui/Card';
+import { Pagination } from '../../../components/ui/Nav';
 import { Badge } from '../../../components/ui/Badge';
 import { IconWarningTriangle } from '../../../components/ui/Icons';
 import { ErrorState, LoadingState, EmptyState } from '../../../components/ui/States';
@@ -26,6 +27,7 @@ export default function InventarioGeneral() {
   const [unidades, setUnidades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
 
   const cargar = useCallback(() => {
     if (necesitaSeleccion) return;
@@ -73,6 +75,9 @@ export default function InventarioGeneral() {
     entregada: unidades.filter((u) => u.estado === 'ENTREGADA').length,
     vencida: unidades.filter((u) => u.estado === 'VENCIDA').length,
   };
+  const totalPages = Math.max(1, Math.ceil(resumenPorConvenio.length / 20));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = resumenPorConvenio.slice((currentPage - 1) * 20, currentPage * 20);
 
   return (
     <div>
@@ -105,7 +110,7 @@ export default function InventarioGeneral() {
                 </tr>
               </thead>
               <tbody>
-                {resumenPorConvenio.map(({ convenio, disponible, entregada, vencida }) => (
+                {pageRows.map(({ convenio, disponible, entregada, vencida }) => (
                   <tr key={convenio.id}>
                     <td className="cell-primary">{convenio.nombre}</td>
                     <td className="right tabular">{disponible}</td>
@@ -116,6 +121,7 @@ export default function InventarioGeneral() {
                 ))}
               </tbody>
             </table>
+            <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} totalLabel={`Mostrando ${pageRows.length} de ${resumenPorConvenio.length} convenios/productos`} />
           </div>
         </div>
       )}

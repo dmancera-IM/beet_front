@@ -5,22 +5,18 @@ import { Card } from '../../components/ui/Card';
 import Button, { IconButton } from '../../components/ui/Button';
 import { Radio, Select } from '../../components/ui/Field';
 import Alert from '../../components/ui/Alert';
+import SignaturePad from '../../components/ui/SignaturePad';
 import { LoadingState, EmptyState, ErrorState } from '../../components/ui/States';
 import * as convenioService from '../../services/convenioService';
+import * as paymentsWayService from '../../services/paymentsWayService';
 import * as transaccionesService from '../../services/transaccionesService';
 import { useMiCupo } from '../../hooks/useMiCupo';
 import { formatCOP, cuotasLabel } from '../../utils/format';
 
 const CUOTAS_OPCIONES = [1, 3, 6, 12];
 
-// ADAPTADO AL BACKEND REAL (POST /transacciones/comprar): solo acepta
-// {id_producto, cantidad, metodo_pago, numero_cuotas} — no hay
-// `numero_tarjeta` ni `firma_base64` (no hay pasarela de pago real ni
-// concepto de "documento de asunción de deuda" en las 13 tablas de este
-// alcance), así que se retiraron el paso de firma y el número de tarjeta:
-// para TARJETA/PSE, el backend crea la transacción COMPLETADA de inmediato
-// sin validar nada externo — ver limitación documentada en
-// beet_backend/app/services/transacciones_service.py.
+// Compra real del afiliado: CUPO sigue siendo interno BEET; TARJETA/PSE inician
+// checkout externo con Payments Way y se completan por webhook/backend.
 export default function PurchaseFlow() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -33,7 +29,9 @@ export default function PurchaseFlow() {
   const [cantidad, setCantidad] = useState(1);
   const [metodoPago, setMetodoPago] = useState('TARJETA');
   const [cuotas, setCuotas] = useState(3);
+  const [firmaBase64, setFirmaBase64] = useState(null);
   const [resultado, setResultado] = useState(null);
+  const [checkout, setCheckout] = useState(null);
   const [compraError, setCompraError] = useState('');
 
   useEffect(() => {
@@ -55,6 +53,8 @@ export default function PurchaseFlow() {
   const maxUnidades = convenio ? 10 : 0;
   const total = convenio ? convenio.precio * cantidad : 0;
   const cupoInsuficiente = metodoPago === 'CUPO' && cupoDisponible != null && total > cupoDisponible;
+  const firmaRequerida = metodoPago === 'CUPO';
+  const usaPaymentsWay = metodoPago === 'TARJETA' || metodoPago === 'PSE';
 
   const steps = useMemo(() => [
     { key: 'cantidad', label: 'Cantidad' },
@@ -73,15 +73,30 @@ export default function PurchaseFlow() {
     setCompraError('');
     setStep('confirmando');
     try {
-      const trx = await transaccionesService.comprar({
-        producto_id: convenio.id,
-        cantidad,
-        metodo_pago: metodoPago,
-        numero_cuotas: metodoPago === 'CUPO' ? cuotas : undefined,
-      });
-      setResultado(trx);
-      setStep('resultado');
-      if (metodoPago === 'CUPO') refrescarCupo();
+      if (usaPaymentsWay) {
+        const pw = await paymentsWayService.crearCheckout({
+          producto_id: convenio.id,
+          cantidad,
+          metodo_pago: metodoPago,
+        });
+        setCheckout(pw);
+        if (pw.checkout_url) {
+          window.location.assign(pw.checkout_url);
+          return;
+        }
+        setStep('checkout-pendiente');
+      } else {
+        const trx = await transaccionesService.comprar({
+          producto_id: convenio.id,
+          cantidad,
+          metodo_pago: metodoPago,
+          numero_cuotas: cuotas,
+          firma_base64: firmaBase64,
+        });
+        setResultado(trx);
+        setStep('resultado');
+        refrescarCupo();
+      }
     } catch (err) {
       setCompraError(err.message || 'No fue posible completar la compra.');
       setStep('resumen');
@@ -122,12 +137,13 @@ export default function PurchaseFlow() {
           <div className="text-label" style={{ marginBottom: 14 }}>Forma de pago</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
             <Radio name="pago" label="Tarjeta débito o crédito" checked={metodoPago === 'TARJETA'} onChange={() => setMetodoPago('TARJETA')} />
+            <Radio name="pago" label="PSE" checked={metodoPago === 'PSE'} onChange={() => setMetodoPago('PSE')} />
             <Radio name="pago" label="Cupo de crédito de la entidad" checked={metodoPago === 'CUPO'} onChange={() => setMetodoPago('CUPO')} />
           </div>
 
-          {metodoPago === 'TARJETA' && (
-            <Alert tone="info" title="Sin pasarela de pago real en esta integración">
-              El backend actual registra la compra como completada de inmediato — no valida datos de tarjeta ni conecta con una pasarela real todavía.
+          {usaPaymentsWay && (
+            <Alert tone="info" title="Pago externo con Payments Way">
+              Al confirmar se creará una transacción pendiente y continuarás en el checkout seguro de Payments Way. BEET entregará el ticket solo cuando el pago sea aprobado por la pasarela.
             </Alert>
           )}
 
@@ -170,22 +186,49 @@ export default function PurchaseFlow() {
             <Row label="Beneficio" value={convenio.nombre} />
             <Row label="Cantidad" value={`${cantidad} unidad${cantidad > 1 ? 'es' : ''}`} />
             <Row label="Precio unitario" value={formatCOP(convenio.precio)} />
-            <Row label="Forma de pago" value={metodoPago === 'TARJETA' ? 'Tarjeta débito/crédito' : `Cupo de la entidad · ${cuotasLabel(cuotas)}`} />
+            <Row label="Forma de pago" value={metodoPago === 'CUPO' ? `Cupo de la entidad · ${cuotasLabel(cuotas)}` : metodoPago === 'PSE' ? 'PSE · Payments Way' : 'Tarjeta débito/crédito · Payments Way'} />
             {metodoPago === 'CUPO' && cupoDisponible != null && <Row label="Cupo disponible después de esta compra" value={formatCOP(cupoDisponible - total)} />}
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border-default)' }}>
               <span style={{ fontWeight: 600 }}>Total a pagar</span>
               <span className="tabular" style={{ fontWeight: 600, fontSize: 20 }}>{formatCOP(total)}</span>
             </div>
           </div>
+          {firmaRequerida && (
+            <div style={{ marginBottom: 20 }}>
+              <Alert tone="info" title="Firma requerida">
+                Para pagar con cupo debes firmar el documento de asunción de deuda antes de confirmar la compra.
+              </Alert>
+              <div style={{ marginTop: 14 }}>
+                <SignaturePad onChange={(base64) => setFirmaBase64(base64 ? `data:image/png;base64,${base64}` : null)} />
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10 }}>
             <Button variant="secondary" onClick={() => setStep('pago')}>Atrás</Button>
-            <Button style={{ flex: 1 }} onClick={confirmarCompra}>Confirmar compra</Button>
+            <Button style={{ flex: 1 }} disabled={firmaRequerida && !firmaBase64} onClick={confirmarCompra}>{usaPaymentsWay ? 'Ir a pagar' : 'Confirmar compra'}</Button>
           </div>
         </Card>
       )}
 
       {step === 'confirmando' && (
-        <LoadingState title="Procesando tu compra" description="No cierres esta ventana. Estamos asignando tu código." />
+        <LoadingState title={usaPaymentsWay ? 'Creando checkout de pago' : 'Procesando tu compra'} description={usaPaymentsWay ? 'Estamos conectando con Payments Way.' : 'No cierres esta ventana. Estamos asignando tu código.'} />
+      )}
+
+      {step === 'checkout-pendiente' && checkout && (
+        <div>
+          <Alert tone="info" title="Pago creado en Payments Way">
+            Tu pago quedó en estado {checkout.estado}. Cuando Payments Way confirme la aprobación, BEET entregará el ticket automáticamente.
+          </Alert>
+          <Card padding="card-pad-lg" style={{ marginTop: 18 }}>
+            <div className="text-label" style={{ marginBottom: 12 }}>Referencia de pago</div>
+            <div className="text-mono" style={{ wordBreak: 'break-all' }}>{checkout.external_order}</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              {checkout.checkout_url && <Button onClick={() => window.location.assign(checkout.checkout_url)}>Continuar a Payments Way</Button>}
+              <Button variant="secondary" onClick={() => navigate('/portal/tickets')}>Ver mis tickets</Button>
+              <Button variant="secondary" onClick={() => navigate('/portal/catalogo')}>Volver al catálogo</Button>
+            </div>
+          </Card>
+        </div>
       )}
 
       {step === 'resultado' && resultado && (

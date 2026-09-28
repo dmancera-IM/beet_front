@@ -1,10 +1,12 @@
-import { ApiError } from "./apiClient";
+import { apiClient, cooperativaScopeStore } from "./apiClient";
 
-// PENDIENTE: el backend real no expone GET /dashboard/stats (ni ningún
-// endpoint agregado equivalente) — ver informe de integración. Dashboard.jsx
-// fue reescrito para calcular sus KPIs a partir de endpoints reales que sí
-// existen (bolsa, crédito, afiliados, convenios, transacciones) en vez de
-// depender de este servicio.
-export function obtenerDashboardStats() {
-  return Promise.reject(new ApiError("Las estadísticas agregadas del dashboard no están disponibles como endpoint propio en el backend actual.", 501, null));
+// GET /dashboard/stats real (beet_backend/app/routers/dashboard.py). Para
+// ADMIN/LECTOR el backend siempre usa su propia cooperativa (del JWT) sin
+// importar qué llegue por query — `cooperativa_id` solo importa para
+// SUPER_ADMIN/GES, tomado de la cooperativa seleccionada en el Header
+// (mismo patrón que convenioService.resolveCooperativaId).
+export function obtenerDashboardStats({ cooperativaId } = {}) {
+  const id = cooperativaId ?? cooperativaScopeStore.get();
+  const query = id ? `?cooperativa_id=${id}` : "";
+  return apiClient.get(`/dashboard/stats${query}`, { tokenAudience: "admin" });
 }
